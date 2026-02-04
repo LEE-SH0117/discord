@@ -1,3 +1,4 @@
+import asyncio
 import os
 import time
 import random
@@ -7,6 +8,7 @@ from datetime import timezone, timedelta
 import re
 
 import aiohttp
+from aiohttp import web
 import discord
 from discord.ext import commands, tasks
 
@@ -542,6 +544,39 @@ async def send_notice(guild: discord.Guild, content: str) -> None:
             print(f"[WARN] 채널 {channel.id} 에 메시지 보낼 권한이 없습니다.")
 
 
+# ======================= Koyeb Health Check API ==========================
+HEALTH_CHECK_PORT = 8000
+
+async def health_check(request: web.Request) -> web.Response:
+    """Koyeb이 봇 상태 확인용으로 호출하는 엔드포인트. 200 OK 반환."""
+    return web.Response(text="OK", status=200)
+
+async def start_web_server():
+    """Health Check용 HTTP 서버를 백그라운드로 띄움. Koyeb 배포 시 필요."""
+    app = web.Application()
+    app.router.add_get("/health", health_check)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, "0.0.0.0", HEALTH_CHECK_PORT)
+    await site.start()
+    print(f"[Health Check] 서버 시작 — http://0.0.0.0:{HEALTH_CHECK_PORT}/health")
+
+async def ping_self():
+    """Koyeb 수면 모드(scale to zero) 방지: 주기적으로 자신의 URL 호출. KOYEB_URL 환경변수 있으면 실행."""
+    koyeb_url = os.getenv("KOYEB_URL") or os.getenv("KOYEP_URL")  # 블로그에선 KOYEP 오타로 적힌 경우 감안
+    if not koyeb_url:
+        return
+    await bot.wait_until_ready()
+    while not bot.is_closed():
+        try:
+            async with aiohttp.ClientSession() as session:
+                url = koyeb_url.rstrip("/") + "/health"
+                await session.get(url, timeout=aiohttp.ClientTimeout(total=10))
+        except Exception:
+            pass
+        await asyncio.sleep(180)
+
+
 # ======================= 이벤트 핸들러 ==========================
 @bot.event
 async def on_ready():
@@ -550,6 +585,10 @@ async def on_ready():
         print("Gemini AI: 사용 가능 (API 키 설정됨)")
     else:
         print("Gemini AI: 비활성 —", "라이브러리 없음" if not GEMINI_AVAILABLE else "API 키 없음")
+    # Koyeb Health Check API 서버 시작 (배포 시 상태 확인용)
+    bot.loop.create_task(start_web_server())
+    # 수면 모드 방지 (KOYEB_URL 설정 시에만)
+    bot.loop.create_task(ping_self())
     if not check_study_time.is_running():
         check_study_time.start()
         print("공부 시간 체크 루프 시작")
