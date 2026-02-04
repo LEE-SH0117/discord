@@ -550,6 +550,54 @@ async def get_gemini_reply(user_message: str, image_bytes: bytes | None = None, 
         return (None, None)
 
 
+# ---------- 메시지 중복 처리 방지 (봇 여러 개 켜져 있을 때 / 이벤트 중복 시 한 번만 응답) ----------
+_DEDUP_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".bot_msg_locks")
+_processed_msg_in_memory: dict[int, float] = {}  # message_id -> 처리 시각 (같은 프로세스 내 중복 방지)
+_DEDUP_MEMORY_MAX_AGE = 5.0  # 초
+_DEDUP_FILE_MAX_AGE = 120    # 초 (파일 락 삭제까지)
+
+
+def _message_already_handled(message_id: int) -> bool:
+    """이 메시지는 이미 처리됐으면 True (메모리 + 파일 락 확인)."""
+    now = time.time()
+    # 메모리: 같은 프로세스에서 최근에 처리한 메시지
+    for mid, t in list(_processed_msg_in_memory.items()):
+        if now - t > _DEDUP_MEMORY_MAX_AGE:
+            del _processed_msg_in_memory[mid]
+    if message_id in _processed_msg_in_memory:
+        return True
+    # 파일: 다른 프로세스가 이미 처리 중/완료
+    try:
+        os.makedirs(_DEDUP_DIR, exist_ok=True)
+        lock_path = os.path.join(_DEDUP_DIR, f"{message_id}.lock")
+        if os.path.exists(lock_path):
+            if now - os.path.getmtime(lock_path) > _DEDUP_FILE_MAX_AGE:
+                try:
+                    os.remove(lock_path)
+                except OSError:
+                    pass
+            else:
+                return True
+        fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        os.close(fd)
+        _processed_msg_in_memory[message_id] = now
+        return False
+    except FileExistsError:
+        return True
+    except OSError:
+        return False  # 권한 등 문제 시 그냥 처리 (중복 가능성 감수)
+
+
+def _release_message_lock(message_id: int) -> None:
+    """처리 끝난 뒤 락 파일 삭제 (나중에 삭제해도 됨)."""
+    try:
+        lock_path = os.path.join(_DEDUP_DIR, f"{message_id}.lock")
+        if os.path.exists(lock_path):
+            os.remove(lock_path)
+    except OSError:
+        pass
+
+
 async def send_notice(guild: discord.Guild, content: str) -> None:
     """안내용 텍스트 채널로 메시지 보내기 (권한 없으면 그냥 무시)"""
     if NOTICE_TEXT_CHANNEL_ID is None:
@@ -697,11 +745,29 @@ async def on_command_error(ctx: commands.Context, error: Exception):
 
 @bot.event
 async def on_message(message: discord.Message):
-    """할당량 안 채운 사람 채팅 5회 제한, 초과 시 핀잔"""
+    """할당량 안 채운 사람 채팅 5회 제한, 초과 시 핀잔. 중복 응답 방지(봇 여러 개/이벤트 중복)."""
     if message.author.bot:
         await bot.process_commands(message)
         return
 
+    # 메시지당 한 번만 처리 (다른 프로세스나 중복 이벤트 시 스킵)
+    if _message_already_handled(message.id):
+        return
+    try:
+        await _on_message_impl(message)
+    finally:
+        asyncio.create_task(_delete_lock_later(message.id))
+    return  # process_commands는 _on_message_impl 안에서 호출
+
+
+async def _delete_lock_later(message_id: int) -> None:
+    """일정 시간 후 락 파일 삭제 (디스크 정리)."""
+    await asyncio.sleep(_DEDUP_FILE_MAX_AGE)
+    _release_message_lock(message_id)
+
+
+async def _on_message_impl(message: discord.Message):
+    """on_message 실제 처리 (중복 체크 후 여기서만 실행)."""
     await maybe_reset_midnight()
     user_id = message.author.id
 
