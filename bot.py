@@ -644,6 +644,25 @@ async def ai_count(ctx: commands.Context):
     )
 
 
+@bot.command(name="AI횟수추가")
+async def ai_count_add(ctx: commands.Context, member: discord.Member, count: int):
+    """서버 주인 전용: 지정 유저에게 AI 사용 기회 N번 추가"""
+    if ctx.guild is None or ctx.author.id != ctx.guild.owner_id:
+        await ctx.send("이 명령은 서버 주인만 사용할 수 있어요.")
+        return
+    if count <= 0:
+        await ctx.send("횟수는 1 이상으로 넣어 주세요.")
+        return
+    await maybe_reset_midnight()
+    used_before = ai_usage_count_today.get(member.id, 0)
+    ai_usage_count_today[member.id] = max(0, used_before - count)
+    added = used_before - ai_usage_count_today[member.id]
+    await ctx.send(
+        f"{member.mention}에게 AI 사용 기회 **{added}번** 추가했어요. "
+        f"(사용 기록: {used_before} → {ai_usage_count_today[member.id]})"
+    )
+
+
 @bot.event
 async def on_message(message: discord.Message):
     """할당량 안 채운 사람 채팅 5회 제한, 초과 시 핀잔"""
