@@ -102,10 +102,15 @@ CHAT_RESTRICTED_ROLE_ID = None  # 예: 123456789012345678
 # 채팅 제한 역할 부여한 유저 (자정·할당량 채우면 역할 해제)
 restricted_chat_user_ids = set()
 
+# !AI횟수추가 명령 사용 가능한 사용자 ID (본인만)
+ADMIN_USER_ID = 764463640811143169
+
 # AI 채널 사용 횟수: 오늘 사용한 횟수 (user_id -> int). 자정 초기화. 기회 = 1 + floor(순공시간/3600) - 이 값
 ai_usage_count_today = {}
 # 1시간 충전 시 "1회 충전되었어요" 안내한 마지막 시간 (user_id -> int). 자정 초기화.
 ai_charged_hour_announced = {}
+# 정신과 시간(무제한)방에서 5시간 됐을 때 "이동 가능하다" 알림 보낸 유저 (자정 초기화)
+unlimited_room_5h_notified_today = set()
 
 
 async def maybe_reset_midnight() -> None:
@@ -120,6 +125,7 @@ async def maybe_reset_midnight() -> None:
         message_count_today.clear()
         ai_usage_count_today.clear()
         ai_charged_hour_announced.clear()
+        unlimited_room_5h_notified_today.clear()
         # 채팅 제한 역할 해제
         if CHAT_RESTRICTED_ROLE_ID is not None:
             for guild in bot.guilds:
@@ -260,6 +266,16 @@ def chat_limit_pinchan(member_mention: str) -> str:
         f"{member_mention} 공부도 안 했으면서 채팅만 미친 듯이 치네? 집중 안 해?",
         f"{member_mention} 야. 공부 안 한 놈이 채팅만 하지 말라.",
         f"{member_mention} 할당량 채우고 와. 채팅 그만.",
+    ])
+
+
+def unlimited_room_can_move_message(member_mention: str) -> str:
+    """정신과 시간(무제한)방 5시간 됐을 때 해방 이동 가능 알림 (꼽주기)"""
+    return random.choice([
+        f"{member_mention} 5시간 채웠다. 이제 해방으로 이동 가능하다. 가고 싶으면 가고, 더 하려면 여기서 쭉 해.",
+        f"{member_mention} 할당량 다 채웠네. 이동 가능해. 해방 가도 되고 여기서 계속 해도 되고.",
+        f"{member_mention} 5시간 됐다. 이동 가능하다. 놀러 가고 싶으면 해방으로, 아니면 그냥 여기서 더 해라.",
+        f"{member_mention} 이제 이동 가능해. 해방 가도 되고 여기서 작업 계속해도 된다.",
     ])
 
 
@@ -646,9 +662,12 @@ async def ai_count(ctx: commands.Context):
 
 @bot.command(name="AI횟수추가")
 async def ai_count_add(ctx: commands.Context, member: discord.Member, count: int):
-    """서버 주인 전용: 지정 유저에게 AI 사용 기회 N번 추가"""
-    if ctx.guild is None or ctx.author.id != ctx.guild.owner_id:
-        await ctx.send("이 명령은 서버 주인만 사용할 수 있어요.")
+    """지정 유저에게 AI 사용 기회 N번 추가 (사용 가능: ID 764463640811143169만). 사용법: !AI횟수추가 @멤버 횟수"""
+    if ctx.author.id != ADMIN_USER_ID:
+        await ctx.send("이 명령은 지정된 사용자만 사용할 수 있어요.")
+        return
+    if ctx.guild is None:
+        await ctx.send("서버에서만 사용할 수 있어요.")
         return
     if count <= 0:
         await ctx.send("횟수는 1 이상으로 넣어 주세요.")
@@ -661,6 +680,19 @@ async def ai_count_add(ctx: commands.Context, member: discord.Member, count: int
         f"{member.mention}에게 AI 사용 기회 **{added}번** 추가했어요. "
         f"(사용 기록: {used_before} → {ai_usage_count_today[member.id]})"
     )
+
+
+@bot.event
+async def on_command_error(ctx: commands.Context, error: Exception):
+    """!AI횟수추가 인자 누락 시 사용법 안내"""
+    if getattr(ctx.command, "name", None) == "AI횟수추가":
+        if isinstance(error, (commands.MissingRequiredArgument, commands.BadArgument)):
+            try:
+                await ctx.send("사용법: `!AI횟수추가 @멤버 횟수` (예: !AI횟수추가 @유저 3)")
+            except discord.Forbidden:
+                pass
+            return
+    raise error
 
 
 @bot.event
@@ -922,8 +954,28 @@ async def check_study_time():
                     pass
 
             remaining = get_remaining_minutes(user_id, channel_id)
+            study_hours = int(state["total_study_sec"] // 3600)
+            is_unlimited_mute_room = channel_id == CHANNELS["STUDY_UNLIMITED_MUTE"]
+            is_3h_plus_room = channel_id == CHANNELS["STUDY_3H_PLUS"]
 
-            if remaining <= 0:
+            # 정신과 시간(무제한)방: 5시간 되어도 해방으로 이동 안 함, 공부 로그에 "이동 가능하다" 알림만 (한 번만)
+            if is_unlimited_mute_room and study_hours >= 5:
+                completed_quota_today.add(user_id)
+                if user_id in restricted_chat_user_ids and CHAT_RESTRICTED_ROLE_ID is not None:
+                    role = guild.get_role(CHAT_RESTRICTED_ROLE_ID)
+                    if role and role in member.roles:
+                        try:
+                            await member.remove_roles(role)
+                        except discord.Forbidden:
+                            pass
+                    restricted_chat_user_ids.discard(user_id)
+                if user_id not in unlimited_room_5h_notified_today:
+                    unlimited_room_5h_notified_today.add(user_id)
+                    await send_notice(guild, unlimited_room_can_move_message(member.mention))
+                continue
+
+            # 3시간 이상 공부방 / 정신과 시간공부방: 5시간 되면 해방 이동. 그 외 유한 방은 remaining <= 0 시 이동
+            if remaining <= 0 or (is_3h_plus_room and study_hours >= 5):
                 # 할당량 채운 걸 먼저 기록 → move_to 하면 on_voice_state_update 에서 해방 입장 시 "공부 안 했으면서" 안 뜸
                 completed_quota_today.add(user_id)
                 # 채팅 제한 역할 해제 (할당량 채우면 채팅 다시 가능)
