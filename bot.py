@@ -20,6 +20,9 @@ except Exception as _e:
     GEMINI_AVAILABLE = False
     print(f"[WARN] Gemini 라이브러리 로드 실패: {_e} — pip install google-generativeai 실행 후 봇을 다시 켜 주세요.")
 
+from dotenv import load_dotenv
+load_dotenv()
+
 # KST (한국 표준시) - 다음날 00시 초기화용
 KST = timezone(timedelta(hours=9))
 
@@ -978,8 +981,6 @@ async def check_rest_time():
 
 # ======================= 실행 ==========================
 if __name__ == "__main__":
-    from dotenv import load_dotenv
-    load_dotenv()
     token = os.getenv("DISCORD_TOKEN")
     if not token:
         raise SystemExit("DISCORD_TOKEN이 .env에 없습니다. .env 파일을 만들고 DISCORD_TOKEN=봇토큰 을 넣어 주세요.")
