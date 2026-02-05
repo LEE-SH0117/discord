@@ -852,12 +852,14 @@ async def _on_message_impl(message: discord.Message):
                     target_voice = guild.get_channel(STUDY_PLEDGE_VOICE_CHANNEL_ID)
                     if isinstance(target_voice, discord.VoiceChannel):
                         await message.author.move_to(target_voice)
-                        await send_notice(guild, pledge_commit_message(message.author.mention, duration_str))
-                    else:
-                        await send_notice(guild, pledge_commit_message(message.author.mention, duration_str))
+                    pledge_ch = guild.get_channel(STUDY_PLEDGE_TEXT_CHANNEL_ID)
+                    if pledge_ch and isinstance(pledge_ch, (discord.TextChannel, discord.Thread)):
+                        await pledge_ch.send(pledge_commit_message(message.author.mention, duration_str))
                 except Exception as e:
                     print(f"[WARN] 선언 공부방 이동 실패: {e}")
-                    await send_notice(guild, pledge_commit_message(message.author.mention, duration_str))
+                    pledge_ch = guild.get_channel(STUDY_PLEDGE_TEXT_CHANNEL_ID)
+                    if pledge_ch and isinstance(pledge_ch, (discord.TextChannel, discord.Thread)):
+                        await pledge_ch.send(pledge_commit_message(message.author.mention, duration_str))
             else:
                 try:
                     ch = guild.get_channel(NOTICE_TEXT_CHANNEL_ID)
