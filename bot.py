@@ -195,7 +195,7 @@ def freedom_taunt_message(member_mention: str) -> str:
         f"{member_mention} ㅋㅋㅋㅋ 공부도 다 안 했으면서 벌써 놀려고 하고 있네 ㅋㅋㅋ 넌 글렀다",
         f"{member_mention} 야 임마 공부 다 하고 와. 여긴 할당량 채운 사람만 오는 데다.",
         f"{member_mention} ㅋㅋ 넌 아직 해방 올 자격 없어. 공부부터 해.",
-        f"{member_mention} 공부 안 하고 해방이? ㅋㅋ 넌 글렀다 진짜.",
+        f"{member_mention} 공부 안 하고 해방에? ㅋㅋ 넌 글렀다 진짜.",
         f"{member_mention} 지금 스트레스 좀 받을 거야.근데 이런 스트레스도 필요해. 공부 안 하고 해방 들어온 거 지금은 별거 아닌 것 같지?오늘 자기 전에 생각날 거야",
     ])
 
