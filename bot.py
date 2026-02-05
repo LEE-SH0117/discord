@@ -196,7 +196,7 @@ def freedom_taunt_message(member_mention: str) -> str:
         f"{member_mention} 야 임마 공부 다 하고 와. 여긴 할당량 채운 사람만 오는 데다.",
         f"{member_mention} ㅋㅋ 넌 아직 해방 올 자격 없어. 공부부터 해.",
         f"{member_mention} 공부 안 하고 해방이? ㅋㅋ 넌 글렀다 진짜.",
-        f"{member_mention} 할당량 채우고 와. 지금 뭐 하는 거야 ㅋㅋ",
+        f"{member_mention} 지금 스트레스 좀 받을 거야.근데 이런 스트레스도 필요해. 공부 안 하고 해방 들어온 거 지금은 별거 아닌 것 같지?오늘 자기 전에 생각날 거야",
     ])
 
 
@@ -227,7 +227,7 @@ def study_unlimited_mute_message() -> str:
         "와.... 여기까지 올 정도면 어지간히 놀았나 보네요? 이제 진짜 좀 하겠다는 거죠?",
         "시간무제한 방까지 왔네 ㅋㅋ 진짜 하려는 거 맞지?",
         "여기 오면 놀면 안 된다. 진짜 공부하는 거다.",
-        "무제한 방이니까 이제 제대로 해라.",
+        "지금 스트레스 좀 받을 거야.근데 공부 많이 된다.",
     ])
 
 
@@ -244,7 +244,7 @@ def rest_pinch_5min(member_mention: str) -> str:
     """쉼터 5분 경과"""
     return random.choice([
         f"{member_mention} 지금 휴식 5분째인데 언제까지 쉴려고…? 그걸 지금 공부라 하는 거야…? 15분 넘기면 3시간 공부방으로 끌고 간다.",
-        f"{member_mention} 5분 됐다. 더 쉬면 3시간 방으로 보낸다. 새낀 더 많이 공부해라.",
+        f"{member_mention} 5분 됐다. 더 쉬면 3시간 방으로 보낸다. 너새낀 더 많이 공부해라.",
         f"{member_mention} 5분째 쉬는 중이네. 10분 되면 또 말하고 15분 되면 3시간 공부방으로 끌고 간다.",
     ])
 
@@ -287,16 +287,16 @@ def unlimited_room_can_move_message(member_mention: str) -> str:
     """정신과 시간(무제한)방 5시간 됐을 때 해방 이동 가능 알림 (꼽주기)"""
     return random.choice([
         f"{member_mention} 5시간 채웠다. 이제 해방으로 이동 가능하다. 가고 싶으면 가고, 더 하려면 여기서 쭉 해.",
-        f"{member_mention} 할당량 다 채웠네. 이동 가능해. 해방 가도 되고 여기서 계속 해도 되고.",
+        f"{member_mention} 할당량 다 채웠네. 이동 가능해. 해방으로 가도 되고 여기서 계속 해도 되고.",
         f"{member_mention} 5시간 됐다. 이동 가능하다. 놀러 가고 싶으면 해방으로, 아니면 그냥 여기서 더 해라.",
-        f"{member_mention} 이제 이동 가능해. 해방 가도 되고 여기서 작업 계속해도 된다.",
+        f"{member_mention} 이제 이동 가능해. 해방으로 가도 되고 여기서 작업 계속해도 된다.",
     ])
 
 
 def rest_force_move_15min(member_mention: str) -> str:
     """쉼터 15분 → 3시간 공부방 강제 이동 시 (더 길게 공부하란 뜻)"""
     return random.choice([
-        f"{member_mention} 어휴 니새끼 공부 안 하니까 내가 강제로라도 시켜야지 원. 3시간 방으로 보낸다. 너 새낀 더 많이 공부해.",
+        f"{member_mention} 어휴 니새끼 공부 안 하니까 내가 강제로라도 시켜야지 원. 3시간 방으로 보낸다. 너 새낀 더 많이 공부해라.",
         f"{member_mention} 15분 넘겼다. 이제 3시간 공부방 가. 강제다. 쉬기만 하면 안 되니까 길게 공부해라.",
         f"{member_mention} 쉬는 거 끝. 공부하러 가. 3시간 채워라. 더 오래 해.",
         f"{member_mention} 놀기만 하지 말고 공부해. 3시간 방으로 끌고 간다. 새낀 더 많이 해라.",
@@ -339,9 +339,9 @@ def study_reentry_message(member_mention: str) -> str:
     """할당량 이미 채운 뒤 공부방 재방문 시 (놀람+응원 꼽주기)"""
     return random.choice([
         f"오.... {member_mention} 다시 공부하게....? 겨우 한 번 하고 끝이 아니었구나. 뭐, 하려면 제대로 해.",
-        f"와 {member_mention} 할당량 채우고 또 왔네? 놀랐다. 그 열심 함 좀 지켜봐.",
-        f"{member_mention} 또 공부하러 왔어? 한 번 하고 끝일 줄 알았는데. 뭐, 해라.",
-        f"오.... {member_mention} 다시 들어왔네. 할당량은 이미 채웠잖아. 그래도 더 한다고? 괜찮은데.",
+        f"와 {member_mention} 할당량 채우고 또 왔네? 놀랐다. 그래 그 결심 함 좀 지켜봐.",
+        f"{member_mention} 또 공부하러 왔어? 한 번 하고 끝일 줄 알았는데....올....ㅋ 뭐, 잘해봐라.",
+        f"오.... {member_mention} 다시 들어왔네. 할당량은 이미 채웠잖아. 그래도 더 한다고? 좀 하는데...?",
     ])
 
 
@@ -350,7 +350,7 @@ def freedom_quota_done_taunt(member_mention: str) -> str:
     return random.choice([
         f"그래... 뭐 {member_mention} 넌 오늘 공부 할당량 했으니까.... 그래도 뭔가 좀 한다 싶어서 놀랐는데 역시나....",
         f"{member_mention} 할당량은 채웠네. 그래도 해방 오면 역시 놀려는 거지 ㅋ",
-        f"뭐 {member_mention} 넌 오늘 할당량 했으니까 말 안 해. 그래도 여기 와서 논다는 건.... 역시.",
+        f"뭐 {member_mention} 넌 오늘 할당량 했으니까 말 안 해. 그래도 여기 와서 논다는 건.... 아니다...! 걍 놀아라 ㅋ",
     ])
 
 
@@ -365,8 +365,8 @@ def study_leave_log_message(member_mention: str, minutes: int, is_extra_session:
 def pledge_commit_message(member_mention: str, duration_str: str) -> str:
     """스스로 N시간 공부 선언 시 로그 꼽주기"""
     return random.choice([
-        f"{member_mention} 너가 스스로 {duration_str} 공부한다 했으니까, 이건 꼭 지켜라.",
-        f"{member_mention} {duration_str} 하겠다고 했으니 말만 하지 말고 해라.",
+        f"{member_mention} 너가 스스로 {duration_str} 공부한다 했다?못지키면 니 흉추 가져간다.",
+        f"{member_mention} {duration_str} 하겠다고 했으니 말만 하지 말고 지켜라.",
         f"{member_mention} {duration_str} 공부한다고 했으면 끝까지 해.",
     ])
 
