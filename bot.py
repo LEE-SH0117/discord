@@ -367,8 +367,17 @@ def study_leave_log_message(member_mention: str, this_session_min: int, today_to
 def pledge_priority_in_other_room_message(member_mention: str, declared_str: str, remaining_str: str) -> str:
     """약속했는데 다른 공부방 들어왔을 때: 약속한 시간이 우선이다"""
     return random.choice([
-        f"{member_mention} 너가 선언한 시간이다. 여기서 공부해도 넌 너가 말한 시간을 공부해야 하는 건 변하지 않아. (선언: {declared_str}, 앞으로 {remaining_str} 더)",
+        f"{member_mention} 동작그만. 밑장빼기냐? 여기서 공부해도 넌 너가 말한 시간을 공부해야 하는 건 변하지 않아. (선언: {declared_str}, 앞으로 {remaining_str} 더)",
         f"{member_mention} 선언한 {declared_str} 잊지 마. 여기 있어도 그만큼은 해야 해. 앞으로 {remaining_str} 더.",
+    ])
+
+
+def pledge_room_no_declaration_message(member_mention: str) -> str:
+    """선언 없이 선언 공부방에 그냥 들어왔을 때"""
+    return random.choice([
+        f"이 공부방은 스스로 시간을 선언한 사람만 오는 곳인데.... {member_mention} 너 진짜 공부 다짐한 거야?흉추 걸수있어?",
+        f"{member_mention} 여긴 선언하고 오는 방이야. 자신있는거지?",
+        f"이 방은 공약을 지킬수있는 사람만 쓰는 곳이야. 근데{member_mention}야 난 이렇게 생각해. 너 진짜 스스로 시간은 지킬수있어?",
     ])
 
 
@@ -461,7 +470,7 @@ def reply_for_study_input(minutes: int, mention: str) -> str:
         f"{mention} {s} 했는데 그거 고작이야? 더 해라.",
         f"{mention} {s}면 시작은 한 거다. 내일은 더 해.",
         f"{mention} {s} 공부했다고? ㅋ 괜찮은데 더 하면 좋겠다.",
-        f"{mention} 오늘 {s}네. 그거로 만족하지 말고 더 해라.",
+        f"{mention} 오늘 {s}정도 공부했네. 그거로 만족하지 말고 더 해라.지금 스트레스 좀 받을 거야.근데 공부 많이 된다.",
     ])
 
 
@@ -1100,17 +1109,20 @@ async def on_voice_state_update(member: discord.Member, before: discord.VoiceSta
                 await send_notice(guild, freedom_taunt_message(member.mention))
             return
 
-        # --- 스스로 N시간 공부 선언 음성방 입장 (나갔다 들어와도 남은 시간 유지) ---
+        # --- 스스로 N시간 공부 선언 음성방 입장 (선언했을 때만 타이머, 아니면 안내만) ---
         if is_pledge_voice_channel(new_channel_id):
-            state["in_study"] = True
-            state["current_channel_id"] = new_channel_id
-            state["last_join_at"] = time.time()
-            pledge_room_entered_at[user_id] = time.time()
             try:
                 await member.edit(mute=True)
             except discord.Forbidden:
                 print(f"[WARN] {member} 서버 음소거 권한 없음")
-            target = pledge_target_minutes.get(user_id, 60)
+            target = pledge_target_minutes.get(user_id)
+            if not target or target <= 0:
+                await send_notice(guild, pledge_room_no_declaration_message(member.mention))
+                return
+            state["in_study"] = True
+            state["current_channel_id"] = new_channel_id
+            state["last_join_at"] = time.time()
+            pledge_room_entered_at[user_id] = time.time()
             completed = pledge_completed_minutes.get(user_id, 0)
             remain = max(0, target - int(completed))
             await send_notice(guild, f"{member.mention} 선언한 공부방 입장. 선언한 {format_minutes(target)} 중 앞으로 {format_minutes(remain)} 더 하면 됨. 지켜라.")
@@ -1151,6 +1163,10 @@ async def on_voice_state_update(member: discord.Member, before: discord.VoiceSta
 
             if user_id in completed_quota_today:
                 await send_notice(guild, study_reentry_message(member.mention))
+                return
+
+            # 선언한 시간이 있으면 이 공부방 입장 멘트는 생략 (위에서 선언 우선 안내만 함)
+            if pledge_target_minutes.get(user_id):
                 return
 
             total_minutes = int(state["total_study_sec"] // 60)
