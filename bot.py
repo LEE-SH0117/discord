@@ -772,12 +772,16 @@ async def gemini_test(ctx: commands.Context):
 
 @bot.command(name="순공시간")
 async def sunong_time(ctx: commands.Context):
-    """오늘 누적 공부 시간 알려주기 (꼽주기 멘트). 선언 공부방 포함 반영."""
+    """오늘 누적 공부 시간 알려주기 (꼽주기 멘트). 일반 공부방 + 선언 공부방 시간 포함."""
     await maybe_reset_midnight()
     user_id = ctx.author.id
-    update_user_study_time(user_id)  # 지금 있는 공부방(선언방 포함) 시간 먼저 반영
     state = get_user_state(user_id)
-    total_minutes = int(state["total_study_sec"] // 60) + int(state.get("session_study_sec", 0) // 60)
+    total_sec = state["total_study_sec"]
+    if ctx.author.voice and ctx.author.voice.channel and ctx.author.voice.channel.id == STUDY_PLEDGE_VOICE_CHANNEL_ID:
+        entered = pledge_room_entered_at.get(user_id)
+        if entered is not None:
+            total_sec += time.time() - entered
+    total_minutes = int(total_sec // 60)
     msg = sunong_time_reply(ctx.author.mention, total_minutes)
     await ctx.send(msg)
 
@@ -870,10 +874,17 @@ async def _on_message_impl(message: discord.Message):
             pledge_completed_minutes[user_id] = 0  # 새 선언 시 누적 완료 분 초기화
             duration_str = format_minutes(minutes)
             if message.author.voice and message.author.voice.channel:
+                in_pledge_already = message.author.voice.channel.id == STUDY_PLEDGE_VOICE_CHANNEL_ID
                 try:
                     target_voice = guild.get_channel(STUDY_PLEDGE_VOICE_CHANNEL_ID)
-                    if isinstance(target_voice, discord.VoiceChannel):
+                    if isinstance(target_voice, discord.VoiceChannel) and not in_pledge_already:
                         await message.author.move_to(target_voice)
+                    if in_pledge_already:
+                        pledge_room_entered_at[user_id] = time.time()
+                        st = get_user_state(user_id)
+                        st["in_study"] = True
+                        st["current_channel_id"] = STUDY_PLEDGE_VOICE_CHANNEL_ID
+                        st["last_join_at"] = time.time()
                     pledge_ch = guild.get_channel(STUDY_PLEDGE_TEXT_CHANNEL_ID)
                     if pledge_ch and isinstance(pledge_ch, (discord.TextChannel, discord.Thread)):
                         await pledge_ch.send(pledge_commit_message(message.author.mention, duration_str))
@@ -882,6 +893,12 @@ async def _on_message_impl(message: discord.Message):
                     pledge_ch = guild.get_channel(STUDY_PLEDGE_TEXT_CHANNEL_ID)
                     if pledge_ch and isinstance(pledge_ch, (discord.TextChannel, discord.Thread)):
                         await pledge_ch.send(pledge_commit_message(message.author.mention, duration_str))
+                    if in_pledge_already:
+                        pledge_room_entered_at[user_id] = time.time()
+                        st = get_user_state(user_id)
+                        st["in_study"] = True
+                        st["current_channel_id"] = STUDY_PLEDGE_VOICE_CHANNEL_ID
+                        st["last_join_at"] = time.time()
             else:
                 try:
                     ch = guild.get_channel(NOTICE_TEXT_CHANNEL_ID)
@@ -1026,6 +1043,7 @@ async def on_voice_state_update(member: discord.Member, before: discord.VoiceSta
             pledge_room_entered_at.pop(user_id, None)
             this_m = (time.time() - entered) / 60 if entered else 0
             pledge_completed_minutes[user_id] = pledge_completed_minutes.get(user_id, 0) + this_m
+            state["total_study_sec"] = state["total_study_sec"] + (this_m * 60)
             target = pledge_target_minutes.get(user_id, 0)
             remain = max(0, target - pledge_completed_minutes[user_id])
             if pledge_completed_minutes[user_id] >= target and target > 0:
@@ -1223,9 +1241,8 @@ async def check_study_time():
             if not is_study_or_pledge_channel(channel_id):
                 continue
 
-            # 스스로 선언한 공부방: 순공 시간 누적 반영 + (선언 - 이미 채운 분 - 이번 세션 경과) 로 남은 시간 계산
+            # 스스로 선언한 공부방: (선언 - 이미 채운 분 - 이번 세션 경과) 로 남은 시간 계산 (나갔다 들어와도 유지)
             if is_pledge_voice_channel(channel_id):
-                update_user_study_time(user_id)  # 선언방에서 보낸 시간도 total_study_sec에 반영 (!순공시간·퇴장 로그용)
                 state = get_user_state(user_id)
                 entered = pledge_room_entered_at.get(user_id)
                 target_min = pledge_target_minutes.get(user_id, 0)
