@@ -35,7 +35,7 @@ intents.voice_states = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# ---- 음성 채널 ID들 (네가 준 거 그대로) ----
+# ---- 음성 채널 ID들 ----
 CHANNELS = {
     "STUDY_1H": 1466068226315387137,
     "STUDY_1_5H": 1466068279406628995,
@@ -56,7 +56,7 @@ ROOM_LIMIT_MINUTES = {
     CHANNELS["STUDY_2H"]: 120,
     CHANNELS["STUDY_2_5H"]: 150,
     CHANNELS["STUDY_3H"]: 180,
-    CHANNELS["STUDY_3H_PLUS"]: 9999,          # 3시간 이상 방: 사실상 무제한
+    CHANNELS["STUDY_3H_PLUS"]: 300,          # 3시간 이상 방: 사실상 무제한
     CHANNELS["STUDY_UNLIMITED_MUTE"]: 9999,   # 시간무제한 음소거 공부방
     CHANNELS["TEST_2M"]: 2,                    # 테스트용 2분
 }
@@ -80,6 +80,7 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 #       "last_join_at": float | None,  # timestamp (초)
 #       "total_study_sec": float,      # 오늘 누적 (할당량용)
 #       "session_study_sec": float,   # 재방문 시 현재 세션만 (할당량 이미 채운 뒤 다시 공부할 때)
+#       "session_start_total_sec": float,  # 이번 세션 입장 시점의 total_study_sec (퇴장 시 "방금 N분" 계산용)
 #   }
 # }
 study_state = {}
@@ -118,8 +119,9 @@ unlimited_room_5h_notified_today = set()
 # 쉼터: 오늘 방문 횟수 / 누적 쉬운 시간(초) (자정 초기화)
 rest_visit_count_today = {}
 rest_total_seconds_today = {}
-# 스스로 N시간 공부 선언: 목표 분 / 해당 음성방 입장 시각 (자정 초기화)
+# 스스로 N시간 공부 선언: 목표 분 / 누적 완료 분 (나갔다 들어와도 유지) / 해당 음성방 입장 시각 (자정·달성 시 초기화)
 pledge_target_minutes: dict[int, int] = {}
+pledge_completed_minutes: dict[int, float] = {}  # 선언한 시간 중 이미 채운 분 (선언방+다른 공부방 포함)
 pledge_room_entered_at: dict[int, float] = {}
 
 
@@ -139,6 +141,7 @@ async def maybe_reset_midnight() -> None:
         rest_visit_count_today.clear()
         rest_total_seconds_today.clear()
         pledge_target_minutes.clear()
+        pledge_completed_minutes.clear()
         pledge_room_entered_at.clear()
         # 채팅 제한 역할 해제
         if CHAT_RESTRICTED_ROLE_ID is not None:
@@ -194,14 +197,14 @@ def freedom_taunt_message(member_mention: str) -> str:
     return random.choice([
         f"{member_mention} ㅋㅋㅋㅋ 공부도 다 안 했으면서 벌써 놀려고 하고 있네 ㅋㅋㅋ 넌 글렀다",
         f"{member_mention} 야 임마 공부 다 하고 와. 여긴 할당량 채운 사람만 오는 데다.",
-        f"{member_mention} ㅋㅋ 넌 아직 해방 올 자격 없어. 공부부터 해.",
+        f"{member_mention} ㅋㅋ 넌 아직 해방에 올 자격 없어. 공부부터 해.",
         f"{member_mention} 공부 안 하고 해방에? ㅋㅋ 넌 글렀다 진짜.",
         f"{member_mention} 지금 스트레스 좀 받을 거야.근데 이런 스트레스도 필요해. 공부 안 하고 해방 들어온 거 지금은 별거 아닌 것 같지?오늘 자기 전에 생각날 거야",
     ])
 
 
 def study_room_entry_finite(used_str: str, remain_str: str) -> str:
-    """유한 공부방 입장 시 (지금까지 X분, 앞으로 Y분)"""
+    """시간제한 공부방 입장 시 (지금까지 X분, 앞으로 Y분)"""
     return random.choice([
         f"지금까지 {used_str} 공부했네. 앞으로 {remain_str} 남았는데 고작 그거 가지고 공부가 되겠어?",
         f"누적 {used_str}, 남은 거 {remain_str}. 그거로 뭘 해 ㅋ",
@@ -212,7 +215,7 @@ def study_room_entry_finite(used_str: str, remain_str: str) -> str:
 
 
 def study_room_entry_zero_extra() -> str:
-    """유한 공부방인데 남은 시간 0분일 때 추가 멘트"""
+    """시간제한 공부방인데 남은 시간 0분일 때 추가 멘트"""
     return random.choice([
         " 근데 남은 시간이 0분이네요? 곧 끌려나가도 놀라지 말아요.",
         " 0분 남았다. 곧 해방(아니면 공부방)으로 끌고 간다.",
@@ -225,18 +228,18 @@ def study_unlimited_mute_message() -> str:
     """시간무제한 음소거 공부방 입장 시"""
     return random.choice([
         "와.... 여기까지 올 정도면 어지간히 놀았나 보네요? 이제 진짜 좀 하겠다는 거죠?",
-        "시간무제한 방까지 왔네 ㅋㅋ 진짜 하려는 거 맞지?",
+        "지금 스트레스 좀 받을 거야.근데 공부 많이 된다.?",
         "여기 오면 놀면 안 된다. 진짜 공부하는 거다.",
-        "지금 스트레스 좀 받을 거야.근데 공부 많이 된다.",
+        "이모 여기 시간 무제한으로 서비스 넣어드렸어요~",
     ])
 
 
 def study_3h_plus_message(used_str: str) -> str:
-    """3시간 이상 등 무제한 계열 입장 시"""
+    """5시간 입장 시"""
     return random.choice([
-        f"여긴 사실상 무제한인데, 그 와중에 지금까지 {used_str}밖에 안 했네요? 더 할 수는 있는 거죠?",
-        f"무제한 방인데 {used_str}밖에 안 했어? ㅋ 더 해.",
-        f"지금까지 {used_str}. 여기선 더 하라는 거다.",
+        f"여긴 5시간 공부방인데.... 그 와중에 지금까지 {used_str}밖에 안 했네요? 5시간이 쉬워보여??",
+        f"여긴 공부좀 할려고 하는애들만 오는데인데... {used_str}밖에 안 했어? ㅋ 더 해.",
+        f"지금까지 {used_str}. 여긴 진짜들만 오는데이다.",
     ])
 
 
@@ -244,7 +247,7 @@ def rest_pinch_5min(member_mention: str) -> str:
     """쉼터 5분 경과"""
     return random.choice([
         f"{member_mention} 지금 휴식 5분째인데 언제까지 쉴려고…? 그걸 지금 공부라 하는 거야…? 15분 넘기면 3시간 공부방으로 끌고 간다.",
-        f"{member_mention} 5분 됐다. 더 쉬면 3시간 방으로 보낸다. 너새낀 더 많이 공부해라.",
+        f"{member_mention} 5분 됐다. 더 쉬면 3시간 방으로 보낸다. 새낀 더 많이 공부해라.",
         f"{member_mention} 5분째 쉬는 중이네. 10분 되면 또 말하고 15분 되면 3시간 공부방으로 끌고 간다.",
     ])
 
@@ -287,21 +290,21 @@ def unlimited_room_can_move_message(member_mention: str) -> str:
     """정신과 시간(무제한)방 5시간 됐을 때 해방 이동 가능 알림 (꼽주기)"""
     return random.choice([
         f"{member_mention} 5시간 채웠다. 이제 해방으로 이동 가능하다. 가고 싶으면 가고, 더 하려면 여기서 쭉 해.",
-        f"{member_mention} 할당량 다 채웠네. 이동 가능해. 해방으로 가도 되고 여기서 계속 해도 되고.",
+        f"{member_mention} 할당량 다 채웠네. 이동 가능해. 해방 가도 되고 여기서 계속 해도 되고.",
         f"{member_mention} 5시간 됐다. 이동 가능하다. 놀러 가고 싶으면 해방으로, 아니면 그냥 여기서 더 해라.",
-        f"{member_mention} 이제 이동 가능해. 해방으로 가도 되고 여기서 작업 계속해도 된다.",
+        f"{member_mention} 이제 이동 가능해. 해방 가도 되고 여기서 작업 계속해도 된다.",
     ])
 
 
 def rest_force_move_15min(member_mention: str) -> str:
     """쉼터 15분 → 3시간 공부방 강제 이동 시 (더 길게 공부하란 뜻)"""
     return random.choice([
-        f"{member_mention} 어휴 니새끼 공부 안 하니까 내가 강제로라도 시켜야지 원. 3시간 방으로 보낸다. 너 새낀 더 많이 공부해라.",
+        f"{member_mention} 어휴 니놈 공부 안 하니까 내가 강제로라도 시켜야지 원. 3시간 방으로 보낸다. 너 새낀 더 많이 공부해.",
         f"{member_mention} 15분 넘겼다. 이제 3시간 공부방 가. 강제다. 쉬기만 하면 안 되니까 길게 공부해라.",
         f"{member_mention} 쉬는 거 끝. 공부하러 가. 3시간 채워라. 더 오래 해.",
         f"{member_mention} 놀기만 하지 말고 공부해. 3시간 방으로 끌고 간다. 새낀 더 많이 해라.",
         f"{member_mention} 쉬는 데 15분 넘겼으면 이제 공부하는 데 3시간은 해라. 강제로 보낸다.",
-        f"{member_mention} 니 새낀 더 많이 공부해야지. 3시간 공부방 가. 거기서 제대로 해.",
+        f"{member_mention} 넌 더 많이 공부해야지. 3시간 공부방 가. 거기서 제대로 해.",
         f"{member_mention} 공부 안 하고 쉬기만 하니까 3시간짜리 방으로 보낸다. 길게 해라.",
         f"{member_mention} 어휴… 쉬기만 하네. 3시간 공부방 가서 제대로 길게 공부해라.",
     ])
@@ -339,9 +342,9 @@ def study_reentry_message(member_mention: str) -> str:
     """할당량 이미 채운 뒤 공부방 재방문 시 (놀람+응원 꼽주기)"""
     return random.choice([
         f"오.... {member_mention} 다시 공부하게....? 겨우 한 번 하고 끝이 아니었구나. 뭐, 하려면 제대로 해.",
-        f"와 {member_mention} 할당량 채우고 또 왔네? 놀랐다. 그래 그 결심 함 좀 지켜봐.",
-        f"{member_mention} 또 공부하러 왔어? 한 번 하고 끝일 줄 알았는데....올....ㅋ 뭐, 잘해봐라.",
-        f"오.... {member_mention} 다시 들어왔네. 할당량은 이미 채웠잖아. 그래도 더 한다고? 좀 하는데...?",
+        f"와 {member_mention} 할당량 채우고 또 왔네? 놀랐다. 그 결심 함 좀 지켜봐.",
+        f"{member_mention} 또 공부하러 왔어? 한 번 하고 끝일 줄 알았는데. 뭐, 해라.",
+        f"오.... {member_mention} 다시 들어왔네. 할당량은 이미 채웠잖아. 그래도 더 한다고? 괜찮은데.",
     ])
 
 
@@ -350,24 +353,31 @@ def freedom_quota_done_taunt(member_mention: str) -> str:
     return random.choice([
         f"그래... 뭐 {member_mention} 넌 오늘 공부 할당량 했으니까.... 그래도 뭔가 좀 한다 싶어서 놀랐는데 역시나....",
         f"{member_mention} 할당량은 채웠네. 그래도 해방 오면 역시 놀려는 거지 ㅋ",
-        f"뭐 {member_mention} 넌 오늘 할당량 했으니까 말 안 해. 그래도 여기 와서 논다는 건.... 아니다...! 걍 놀아라 ㅋ",
+        f"뭐 {member_mention} 넌 오늘 할당량 했으니까 말 안 해. 그래도 여기 와서 논다는 건.... 역시.",
     ])
 
 
-def study_leave_log_message(member_mention: str, minutes: int, is_extra_session: bool) -> str:
-    """공부방 나갈 때 로그용 멘트"""
-    s = format_minutes(minutes)
-    if is_extra_session:
-        return f"{member_mention} 공부방 나감. 이번에 {s} 더 공부함. (오늘 할당량 이미 채움)"
-    return f"{member_mention} 공부방 나감. 오늘 누적 {s} 공부했음."
+def study_leave_log_message(member_mention: str, this_session_min: int, today_total_min: int) -> str:
+    """공부방 나갈 때 로그용: 방금 N분 + 오늘 총 M분"""
+    s1 = format_minutes(this_session_min)
+    s2 = format_minutes(today_total_min)
+    return f"{member_mention} 공부방 나감. 방금 {s1} 공부했고, 오늘 총 {s2} 공부했음."
+
+
+def pledge_priority_in_other_room_message(member_mention: str, declared_str: str, remaining_str: str) -> str:
+    """약속했는데 다른 공부방 들어왔을 때: 약속한 시간이 우선이다"""
+    return random.choice([
+        f"{member_mention} 너가 선언한 시간이다. 여기서 공부해도 넌 너가 말한 시간을 공부해야 하는 건 변하지 않아. (선언: {declared_str}, 앞으로 {remaining_str} 더)",
+        f"{member_mention} 선언한 {declared_str} 잊지 마. 여기 있어도 그만큼은 해야 해. 앞으로 {remaining_str} 더.",
+    ])
 
 
 def pledge_commit_message(member_mention: str, duration_str: str) -> str:
     """스스로 N시간 공부 선언 시 로그 꼽주기"""
     return random.choice([
-        f"{member_mention} 너가 스스로 {duration_str} 공부한다 했다?못지키면 니 흉추 가져간다.",
-        f"{member_mention} {duration_str} 하겠다고 했으니 말만 하지 말고 지켜라.",
-        f"{member_mention} {duration_str} 공부한다고 했으면 끝까지 해.",
+        f"{member_mention} 너가 스스로 {duration_str} 공부한다 했으니까, 이건 꼭 지켜라.",
+        f"{member_mention} {duration_str} 하겠다고 했으니 말만 하지 말고 해라.시간 충전해줬으니까 가서 공부 시작해.",
+        f"{member_mention} 시간 충전해뒀다.{duration_str} 공부한다고 했으면 끝까지 해.",
     ])
 
 
@@ -379,6 +389,7 @@ def get_user_state(user_id: int) -> dict:
             "last_join_at": None,
             "total_study_sec": 0.0,
             "session_study_sec": 0.0,
+            "session_start_total_sec": 0.0,
         }
     return study_state[user_id]
 
@@ -454,7 +465,7 @@ def reply_for_study_input(minutes: int, mention: str) -> str:
     ])
 
 
-# AI 채널용 시스템 프롬프트: 츤데레 + 꼼꼼한 공부 조언
+#---------------------- AI 채널용 시스템 프롬프트----------------------
 AI_CHANNEL_SYSTEM_PROMPT = """너는 공부하는 사람한테 츤데레처럼 말하면서 조언하는 AI다.
 
 [반드시 지켜야 할 것]
@@ -480,7 +491,7 @@ def is_study_query(text: str) -> bool:
 
 
 # 429 시 봇이 보낼 안내 문구 (사용자에게 표시)
-GEMINI_QUOTA_MESSAGE = "지금 API 한도가 다 찼어요. 잠시 뒤에 다시 시도하거나, Google AI Studio(https://aistudio.google.com)에서 사용량·한도 확인해 주세요."
+GEMINI_QUOTA_MESSAGE = "지금 API 한도가 다 찼어요. 잠시 뒤에 다시 시도하거나,사용량·한도 확인해 주세요."
 
 # API에서 조회한 사용 가능 모델 목록 캐시 (봇 켜질 때 한 번 조회)
 _gemini_models_cache = None
@@ -846,6 +857,7 @@ async def _on_message_impl(message: discord.Message):
         minutes = parse_study_minutes_from_message(content)
         if minutes and minutes >= 1:
             pledge_target_minutes[user_id] = minutes
+            pledge_completed_minutes[user_id] = 0  # 새 선언 시 누적 완료 분 초기화
             duration_str = format_minutes(minutes)
             if message.author.voice and message.author.voice.channel:
                 try:
@@ -997,22 +1009,45 @@ async def on_voice_state_update(member: discord.Member, before: discord.VoiceSta
         rest_entered_at.pop(user_id, None)
         rest_pinch_sent.pop(user_id, None)
 
-    # 공부방/선언방에서 나갔으면 로그 (얼마나 공부했는지)
+    # 공부방/선언방에서 나갔으면 로그 (방금 N분 + 오늘 총 M분)
     if old_channel_id is not None and (is_study_channel(old_channel_id) or is_pledge_voice_channel(old_channel_id)):
         if is_pledge_voice_channel(old_channel_id):
             entered = pledge_room_entered_at.get(user_id)
             pledge_room_entered_at.pop(user_id, None)
-            pledge_target_minutes.pop(user_id, None)
-            mins = int((time.time() - entered) / 60) if entered else 0
-            await send_notice(guild, f"{member.mention} 선언 공부방 나감. 이번에 {format_minutes(mins)} 공부했음.")
+            this_m = (time.time() - entered) / 60 if entered else 0
+            pledge_completed_minutes[user_id] = pledge_completed_minutes.get(user_id, 0) + this_m
+            target = pledge_target_minutes.get(user_id, 0)
+            remain = max(0, target - pledge_completed_minutes[user_id])
+            if pledge_completed_minutes[user_id] >= target and target > 0:
+                pledge_target_minutes.pop(user_id, None)
+                pledge_completed_minutes.pop(user_id, None)
+            today_total_sec = state["total_study_sec"] + state.get("session_study_sec", 0)
+            today_m = int(today_total_sec // 60)
+            await send_notice(guild, f"{member.mention} 선언 공부방 나감. 방금 {format_minutes(int(this_m))} 공부했고, 오늘 총 {format_minutes(today_m)} 공부했음. (선언 목표 중 앞으로 {format_minutes(int(remain))} 더)")
         else:
             if user_id in completed_quota_today:
-                mins = int(state.get("session_study_sec", 0) // 60)
-                await send_notice(guild, study_leave_log_message(member.mention, mins, True))
+                this_sec = state.get("session_study_sec", 0)
+                today_total_sec = state["total_study_sec"] + this_sec
+                await send_notice(guild, study_leave_log_message(
+                    member.mention,
+                    int(this_sec // 60),
+                    int(today_total_sec // 60),
+                ))
                 state["session_study_sec"] = 0.0
             else:
-                mins = int(state["total_study_sec"] // 60)
-                await send_notice(guild, study_leave_log_message(member.mention, mins, False))
+                start_sec = state.get("session_start_total_sec", 0)
+                this_sec = max(0, state["total_study_sec"] - start_sec)
+                this_mins = int(this_sec // 60)
+                await send_notice(guild, study_leave_log_message(
+                    member.mention,
+                    this_mins,
+                    int(state["total_study_sec"] // 60),
+                ))
+                if pledge_target_minutes.get(user_id):
+                    pledge_completed_minutes[user_id] = pledge_completed_minutes.get(user_id, 0) + this_mins
+                    if pledge_completed_minutes[user_id] >= pledge_target_minutes[user_id]:
+                        pledge_target_minutes.pop(user_id, None)
+                        pledge_completed_minutes.pop(user_id, None)
         state["in_study"] = False
         state["current_channel_id"] = None
         state["last_join_at"] = None
@@ -1065,7 +1100,7 @@ async def on_voice_state_update(member: discord.Member, before: discord.VoiceSta
                 await send_notice(guild, freedom_taunt_message(member.mention))
             return
 
-        # --- 스스로 N시간 공부 선언 음성방 입장 (봇이 이동시킨 후) ---
+        # --- 스스로 N시간 공부 선언 음성방 입장 (나갔다 들어와도 남은 시간 유지) ---
         if is_pledge_voice_channel(new_channel_id):
             state["in_study"] = True
             state["current_channel_id"] = new_channel_id
@@ -1076,17 +1111,35 @@ async def on_voice_state_update(member: discord.Member, before: discord.VoiceSta
             except discord.Forbidden:
                 print(f"[WARN] {member} 서버 음소거 권한 없음")
             target = pledge_target_minutes.get(user_id, 60)
-            await send_notice(guild, f"{member.mention} 선언한 공부방 입장. 목표 {format_minutes(target)}. 지켜라.")
+            completed = pledge_completed_minutes.get(user_id, 0)
+            remain = max(0, target - int(completed))
+            await send_notice(guild, f"{member.mention} 선언한 공부방 입장. 선언한 {format_minutes(target)} 중 앞으로 {format_minutes(remain)} 더 하면 됨. 지켜라.")
             return
 
         # --- 공부방 입장 ---
         if joined_study:
+            # 이번 세션 시작 시점의 누적 시간 저장 (퇴장 시 "방금 N분" 계산용)
+            state["session_start_total_sec"] = state["total_study_sec"]
             # 재방문(할당량 이미 채움): 세션만 0으로 시작, 꼽주기 멘트
             if user_id in completed_quota_today:
                 state["session_study_sec"] = 0.0
             state["in_study"] = True
             state["current_channel_id"] = new_channel_id
             state["last_join_at"] = time.time()
+
+            # 선언한 시간이 있으면: 여기서 공부해도 선언한 만큼 해야 한다고 안내
+            target = pledge_target_minutes.get(user_id)
+            if target and target > 0:
+                completed = pledge_completed_minutes.get(user_id, 0)
+                remain = max(0, target - int(completed))
+                await send_notice(guild, pledge_priority_in_other_room_message(
+                    member.mention, format_minutes(target), format_minutes(remain),
+                ))
+            else:
+                # 재방문 시(이미 오늘 공부한 적 있음) 로그에 오늘 총 공부 시간 안내
+                today_total_sec = state["total_study_sec"] + state.get("session_study_sec", 0)
+                if today_total_sec > 0:
+                    await send_notice(guild, f"{member.mention} 공부방 입장. 오늘 총 {format_minutes(int(today_total_sec // 60))} 공부했음.")
 
             try:
                 await member.edit(mute=True)
@@ -1153,16 +1206,18 @@ async def check_study_time():
             if not is_study_or_pledge_channel(channel_id):
                 continue
 
-            # 스스로 선언한 공부방: 목표 시간 기준으로 남은 시간 계산
+            # 스스로 선언한 공부방: (선언 - 이미 채운 분 - 이번 세션 경과) 로 남은 시간 계산 (나갔다 들어와도 유지)
             if is_pledge_voice_channel(channel_id):
                 state = get_user_state(user_id)
                 entered = pledge_room_entered_at.get(user_id)
                 target_min = pledge_target_minutes.get(user_id, 0)
+                completed_before = pledge_completed_minutes.get(user_id, 0)
                 if entered is None or target_min <= 0:
                     continue
                 now = time.time()
-                elapsed_min = int((now - entered) / 60)
-                remaining = target_min - elapsed_min
+                this_session_min = (now - entered) / 60
+                remaining = target_min - completed_before - this_session_min
+                remaining = int(remaining) if remaining > 0 else 0
                 study_hours = 0  # 아래 분기에서 사용 (pledge는 무제한방 아님)
             else:
                 update_user_study_time(user_id)
@@ -1209,8 +1264,12 @@ async def check_study_time():
                             pass
                     restricted_chat_user_ids.discard(user_id)
                 if is_pledge_voice_channel(channel_id):
+                    now = time.time()
+                    session_min = (now - pledge_room_entered_at.get(user_id, now)) / 60
+                    pledge_completed_minutes[user_id] = pledge_completed_minutes.get(user_id, 0) + session_min
                     pledge_room_entered_at.pop(user_id, None)
                     pledge_target_minutes.pop(user_id, None)
+                    pledge_completed_minutes.pop(user_id, None)
                 freedom_channel = guild.get_channel(CHANNELS["FREEDOM"])
                 if isinstance(freedom_channel, discord.VoiceChannel):
                     try:
