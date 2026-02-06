@@ -772,11 +772,12 @@ async def gemini_test(ctx: commands.Context):
 
 @bot.command(name="순공시간")
 async def sunong_time(ctx: commands.Context):
-    """오늘 누적 공부 시간 알려주기 (꼽주기 멘트)"""
+    """오늘 누적 공부 시간 알려주기 (꼽주기 멘트). 선언 공부방 포함 반영."""
     await maybe_reset_midnight()
     user_id = ctx.author.id
+    update_user_study_time(user_id)  # 지금 있는 공부방(선언방 포함) 시간 먼저 반영
     state = get_user_state(user_id)
-    total_minutes = int(state["total_study_sec"] // 60)
+    total_minutes = int(state["total_study_sec"] // 60) + int(state.get("session_study_sec", 0) // 60)
     msg = sunong_time_reply(ctx.author.mention, total_minutes)
     await ctx.send(msg)
 
@@ -1222,8 +1223,9 @@ async def check_study_time():
             if not is_study_or_pledge_channel(channel_id):
                 continue
 
-            # 스스로 선언한 공부방: (선언 - 이미 채운 분 - 이번 세션 경과) 로 남은 시간 계산 (나갔다 들어와도 유지)
+            # 스스로 선언한 공부방: 순공 시간 누적 반영 + (선언 - 이미 채운 분 - 이번 세션 경과) 로 남은 시간 계산
             if is_pledge_voice_channel(channel_id):
+                update_user_study_time(user_id)  # 선언방에서 보낸 시간도 total_study_sec에 반영 (!순공시간·퇴장 로그용)
                 state = get_user_state(user_id)
                 entered = pledge_room_entered_at.get(user_id)
                 target_min = pledge_target_minutes.get(user_id, 0)
