@@ -160,9 +160,70 @@ async def maybe_reset_midnight() -> None:
     last_reset_date = today
 
 
-# ======================= 유틸 함수들 (킹받는 말투 랜덤) ==========================
-def snarky_prefix() -> str:
-    """살짝 띠꺼운 말투 앞부분"""
+# ======================= 공부 레벨 파싱 (경험치봇 닉네임 [공부레벨 N] 활용) ==========================
+def parse_study_level(member: discord.Member) -> int:
+    """서버별 닉네임(display_name)에서 [공부레벨 N] 또는 공부레벨 N 형태로 숫자 파싱. 없으면 0."""
+    name = (member.display_name or member.name or "").strip()
+    m = re.search(r"공부\s*레벨\s*(\d+)", name, re.IGNORECASE)
+    return int(m.group(1)) if m else 0
+
+
+def get_tone_tier(member: discord.Member, guild: discord.Guild | None) -> str:
+    """레벨·서버 주인 여부에 따라 말투 단계 반환.
+    1~5: snarky(아주 띠겁게·기존), 6~10~15~20~30~40~50~70~90: 점점 친절, 91~: 완전 친절, 서버주: loyal(신처럼 모시기)."""
+    if guild and member.id == guild.owner_id:
+        return "loyal"
+    level = parse_study_level(member)
+    if level >= 91:
+        return "t91"
+    if level >= 71:
+        return "t71_90"
+    if level >= 51:
+        return "t51_70"
+    if level >= 41:
+        return "t41_50"
+    if level >= 31:
+        return "t31_40"
+    if level >= 21:
+        return "t21_30"
+    if level >= 16:
+        return "t16_20"
+    if level >= 11:
+        return "t11_15"
+    if level >= 6:
+        return "t6_10"
+    # 0~5: 아주 띠겁게 (기존 활용)
+    return "snarky"
+
+
+# ---- 레벨 구간별 말투: snarky(1~5) | t6_10~t91(점점 친절) | loyal(서버주 신처럼) ----
+def snarky_prefix(tone: str = "snarky") -> str:
+    """말투 앞부분. snarky=기존 띠꺼움, t6_10~t91=점점 친절, loyal=서버주 신처럼 모시기."""
+    if tone == "loyal":
+        return random.choice([
+            "감사합니다. ", "네, 알겠습니다. ", "죄송하오나, ", "모시는 바, ",
+            "감히 여쭙건대, ", "어찌 감히, ", "허락하시면, ", "은혜에 감사드리며, ",
+        ])
+    if tone == "t91":
+        return random.choice([
+            "네, ", "좋아요. ", "잘 오셨어요. ", "반가워요. ", "응원할게요. ",
+        ])
+    if tone in ("t71_90", "t51_70"):
+        return random.choice([
+            "와, ", "오, ", "잘 오셨어요. ", "좋아요. ", "힘내요. ", "응원해요. ",
+        ])
+    if tone in ("t41_50", "t31_40"):
+        return random.choice([
+            "오, ", "잘 왔어요. ", "좋아요. ", "알겠어요. ", "괜찮아요. ",
+        ])
+    if tone in ("t21_30", "t16_20"):
+        return random.choice([
+            "어, ", "음, ", "잘 왔어. ", "그래. ", "알겠어. ",
+        ])
+    if tone in ("t11_15", "t6_10"):
+        return random.choice([
+            "어, ", "그래. ", "음. ", "알겠어. ", "좀 더 해.",
+        ])
     return random.choice([
         "또 왔네요, ", "아직도 버티는 중이네요, ", "이 정도로 해서 되겠어요, ",
         "에휴 참… ", "공부하는 척은 아주 열심히네요, ", "와 진짜… ",
@@ -170,8 +231,42 @@ def snarky_prefix() -> str:
     ])
 
 
-def snarky_done_message(member_mention: str) -> str:
-    """시간 다 됐을 때 멘트 (해방 이동 시 이거만 뜨게)"""
+def snarky_done_message(member_mention: str, tone: str = "snarky") -> str:
+    """시간 다 됐을 때 멘트 (해방 이동 시)."""
+    if tone == "loyal":
+        return random.choice([
+            f"{member_mention} 오늘도 수고 많으셨사옵니다. 해방으로 모시어 드리겠나이다.",
+            f"{member_mention} 허락하신 만큼 채우셨사옵니다. 해방으로 안내해 드리겠나이다.",
+            f"{member_mention} 공부 잘 하셨사옵니다. 이제 해방으로 모시겠나이다.",
+            f"{member_mention} 감사하옵니다. 해방으로 모시어 드리겠사옵니다.",
+        ])
+    if tone == "t91":
+        return random.choice([
+            f"{member_mention} 수고 많으셨어요. 이제 해방 가서 편히 쉬세요. 정말 잘 하셨어요.",
+            f"{member_mention} 할당량 다 채우셨네요. 해방으로 가서 푹 쉬어요. 응원할게요.",
+            f"{member_mention} 오늘도 잘 하셨어요. 해방 가세요. 좋은 하루 되세요.",
+        ])
+    if tone in ("t71_90", "t51_70"):
+        return random.choice([
+            f"{member_mention} 수고했어요. 해방 가서 쉬어요. 잘 했어요.",
+            f"{member_mention} 할당량 채웠네. 해방 가. 힘내.",
+            f"{member_mention} 잘 했어. 이제 해방으로 가.",
+        ])
+    if tone in ("t41_50", "t31_40"):
+        return random.choice([
+            f"{member_mention} 다 했어요. 해방 가세요.",
+            f"{member_mention} 할당량 채웠어요. 해방 가서 쉬어요.",
+        ])
+    if tone in ("t21_30", "t16_20"):
+        return random.choice([
+            f"{member_mention} 다 했네. 해방 가.",
+            f"{member_mention} 할당량 채웠어. 해방 가도 돼.",
+        ])
+    if tone in ("t11_15", "t6_10"):
+        return random.choice([
+            f"{member_mention} 다 했어. 해방 가.",
+            f"{member_mention} 할당량 채웠네. 해방 가.",
+        ])
     return random.choice([
         f"{member_mention} 그래서 공부 다 하신 거 맞죠? ㅎ 안 끝났으면… 뭐 알아서 하시구요.",
         f"{member_mention} 할당량 채웠다고? ㅎ 이제 해방 가서 놀아.",
@@ -181,19 +276,81 @@ def snarky_done_message(member_mention: str) -> str:
     ])
 
 
-def rest_entry_message(member_mention: str) -> str:
+def rest_entry_message(member_mention: str, tone: str = "snarky") -> str:
     """쉼터 입장 시"""
+    if tone == "loyal":
+        return random.choice([
+            f"{snarky_prefix(tone)}{member_mention} 쉼터 오셨사옵니다. 적당히 쉬시고 다시 공부하러 오시면 감사하겠나이다. 15분 넘기시면 공부방으로 모시어 드리겠나이다.",
+            f"{snarky_prefix(tone)}{member_mention} 휴식 잠깐 하시는 거옵니까. 15분 넘기시면 공부방으로 안내해 드리겠사옵니다.",
+            f"{snarky_prefix(tone)}{member_mention} 쉼터 입장하셨사옵니다. 오래 쉬시면 공부방으로 모시겠나이다.",
+        ])
+    if tone == "t91":
+        return random.choice([
+            f"{snarky_prefix(tone)}{member_mention} 쉬러 오셨네요. 적당히 쉬시고 금방 돌아오세요. 15분 넘기시면 공부방으로 보내 드릴게요.",
+            f"{snarky_prefix(tone)}{member_mention} 휴식이시군요. 15분 넘기시면 공부방으로 안내해 드릴게요. 알겠어요?",
+        ])
+    if tone in ("t71_90", "t51_70"):
+        return random.choice([
+            f"{snarky_prefix(tone)}{member_mention} 쉬러 왔어요. 금방 돌아와요. 15분 넘기면 공부방으로 보낼게요.",
+            f"{snarky_prefix(tone)}{member_mention} 휴식이지? 오래 있으면 공부방으로 보낼 수 있어요.",
+        ])
+    if tone in ("t41_50", "t31_40"):
+        return random.choice([
+            f"{snarky_prefix(tone)}{member_mention} 쉬러 왔어요. 15분 넘기면 공부방으로 보낼게요.",
+            f"{snarky_prefix(tone)}{member_mention} 휴식해. 오래 있으면 공부방으로 보낸다.",
+        ])
+    if tone in ("t21_30", "t16_20"):
+        return random.choice([
+            f"{snarky_prefix(tone)}{member_mention} 쉬러 왔어? 15분 넘기면 공부방으로 끌고 간다.",
+            f"{snarky_prefix(tone)}{member_mention} 휴식이지. 금방 돌아가.",
+        ])
+    if tone in ("t11_15", "t6_10"):
+        return random.choice([
+            f"{snarky_prefix(tone)}{member_mention} 쉬러 왔어? 15분 넘기면 공부방으로 보낸다.",
+            f"{snarky_prefix(tone)}{member_mention} 금방 돌아가. 오래 있으면 끌고 간다.",
+        ])
     return random.choice([
-        f"{snarky_prefix()}{member_mention} 또 쉬러 왔네요? 이번엔 얼마나 누워있을 건데요.",
-        f"{snarky_prefix()}{member_mention} 쉬러 오셨군요. 금방 돌아가세요.",
-        f"{snarky_prefix()}{member_mention} 휴식 타임이지? 오래 있으면 끌고 간다.",
-        f"{snarky_prefix()}{member_mention} 쉬는 거 15분 넘기면 공부방으로 강제 이동이에요.",
-        f"{snarky_prefix()}{member_mention} 또 놀러 왔네 ㅋㅋ 얼마나 쉴 거야.",
+        f"{snarky_prefix(tone)}{member_mention} 또 쉬러 왔네요? 이번엔 얼마나 누워있을 건데요.",
+        f"{snarky_prefix(tone)}{member_mention} 쉬러 오셨군요. 금방 돌아가세요.",
+        f"{snarky_prefix(tone)}{member_mention} 휴식 타임이지? 오래 있으면 끌고 간다.",
+        f"{snarky_prefix(tone)}{member_mention} 쉬는 거 15분 넘기면 공부방으로 강제 이동이에요.",
+        f"{snarky_prefix(tone)}{member_mention} 또 놀러 왔네 ㅋㅋ 얼마나 쉴 거야.",
     ])
 
 
-def freedom_taunt_message(member_mention: str) -> str:
+def freedom_taunt_message(member_mention: str, tone: str = "snarky") -> str:
     """해방에 할당량 안 채우고 들어왔을 때"""
+    if tone == "loyal":
+        return random.choice([
+            f"{member_mention} 감히 아룁니다. 해방은 할당량을 채우신 분만 모실 수 있사옵니다. 공부를 마치시고 오시면 감사하겠나이다.",
+            f"{member_mention} 죄송하오나 해방은 오늘 할당량을 채우신 분만 입장하실 수 있사옵니다. 조금만 더 하시고 오시옵소서.",
+            f"{member_mention} 어찌 감히 해방은 할당량 채우신 분만 모시옵니다. 공부 먼저 하시고 오시면 감사하겠나이다.",
+        ])
+    if tone == "t91":
+        return random.choice([
+            f"{member_mention} 해방은 할당량을 채우신 분만 올 수 있어요. 공부 먼저 하시고 오시면 좋겠어요. 화이팅이에요.",
+            f"{member_mention} 아직 할당량이 안 찼어요. 조금만 더 공부하고 오면 해방 와도 돼요. 기다릴게요.",
+        ])
+    if tone in ("t71_90", "t51_70"):
+        return random.choice([
+            f"{member_mention} 해방은 할당량 채운 사람만 올 수 있어요. 공부 먼저 해 주세요.",
+            f"{member_mention} 아직 할당량이 안 찼어요. 공부하고 오면 해방 와도 돼요.",
+        ])
+    if tone in ("t41_50", "t31_40"):
+        return random.choice([
+            f"{member_mention} 여기는 할당량 채운 사람만 올 수 있어요. 공부 먼저 해 주세요.",
+            f"{member_mention} 할당량 먼저 채우고 와요.",
+        ])
+    if tone in ("t21_30", "t16_20"):
+        return random.choice([
+            f"{member_mention} 여긴 할당량 채운 사람만 오는 데. 공부하고 와.",
+            f"{member_mention} 공부 먼저 해. 그다음에 해방 와.",
+        ])
+    if tone in ("t11_15", "t6_10"):
+        return random.choice([
+            f"{member_mention} 여긴 할당량 채운 사람만 오는 데. 공부하고 와.",
+            f"{member_mention} 공부 먼저 해.",
+        ])
     return random.choice([
         f"{member_mention} ㅋㅋㅋㅋ 공부도 다 안 했으면서 벌써 놀려고 하고 있네 ㅋㅋㅋ 넌 글렀다",
         f"{member_mention} 야 임마 공부 다 하고 와. 여긴 할당량 채운 사람만 오는 데다.",
@@ -203,8 +360,39 @@ def freedom_taunt_message(member_mention: str) -> str:
     ])
 
 
-def study_room_entry_finite(used_str: str, remain_str: str) -> str:
+def study_room_entry_finite(used_str: str, remain_str: str, tone: str = "snarky") -> str:
     """시간제한 공부방 입장 시 (지금까지 X분, 앞으로 Y분)"""
+    if tone == "loyal":
+        return random.choice([
+            f"지금까지 {used_str} 하셨사옵고, 앞으로 {remain_str} 남으셨나이다. 잘 하시옵소서.",
+            f"누적 {used_str}, 남은 시간 {remain_str}이옵니다. 화이팅이옵소서.",
+            f"허락하신 만큼 {used_str} 하셨사옵고 {remain_str} 남으셨나이다. 수고하옵소서.",
+        ])
+    if tone == "t91":
+        return random.choice([
+            f"지금까지 {used_str} 하셨고 앞으로 {remain_str} 남았어요. 정말 잘 하고 있어요. 힘내세요.",
+            f"누적 {used_str}, 남은 시간 {remain_str}. 잘하고 계세요. 응원할게요.",
+        ])
+    if tone in ("t71_90", "t51_70"):
+        return random.choice([
+            f"지금까지 {used_str}, 앞으로 {remain_str} 남았어요. 힘내요.",
+            f"{remain_str} 남았어요. {used_str} 한 거 잘했어요.",
+        ])
+    if tone in ("t41_50", "t31_40"):
+        return random.choice([
+            f"지금까지 {used_str}, 앞으로 {remain_str} 남았어요. 잘 해요.",
+            f"{remain_str} 남았어요. 화이팅.",
+        ])
+    if tone in ("t21_30", "t16_20"):
+        return random.choice([
+            f"지금까지 {used_str}, 앞으로 {remain_str} 남았어. 잘 해.",
+            f"{remain_str} 남았네. 화이팅.",
+        ])
+    if tone in ("t11_15", "t6_10"):
+        return random.choice([
+            f"지금까지 {used_str}, 앞으로 {remain_str} 남았어. 더 해.",
+            f"{remain_str} 남았네. 잘 해.",
+        ])
     return random.choice([
         f"지금까지 {used_str} 공부했네. 앞으로 {remain_str} 남았는데 고작 그거 가지고 공부가 되겠어?",
         f"누적 {used_str}, 남은 거 {remain_str}. 그거로 뭘 해 ㅋ",
@@ -214,8 +402,22 @@ def study_room_entry_finite(used_str: str, remain_str: str) -> str:
     ])
 
 
-def study_room_entry_zero_extra() -> str:
+def study_room_entry_zero_extra(tone: str = "snarky") -> str:
     """시간제한 공부방인데 남은 시간 0분일 때 추가 멘트"""
+    if tone == "loyal":
+        return random.choice([
+            " 남은 시간이 0분이옵니다. 곧 해방으로 모시어 드리겠나이다.",
+            " 시간이 다 되었사옵니다. 잠시 후 이동해 드리겠나이다.",
+        ])
+    if tone in ("t91", "t71_90", "t51_70"):
+        return random.choice([
+            " 남은 시간이 0분이에요. 곧 해방으로 안내해 드릴게요.",
+            " 시간이 다 됐어요. 잠시 후 이동해 드릴게요.",
+        ])
+    if tone in ("t41_50", "t31_40", "t21_30", "t16_20"):
+        return " 0분 남았어요. 곧 이동시킬게요."
+    if tone in ("t11_15", "t6_10"):
+        return " 0분 남았어. 곧 이동시킬게."
     return random.choice([
         " 근데 남은 시간이 0분이네요? 곧 끌려나가도 놀라지 말아요.",
         " 0분 남았다. 곧 해방(아니면 공부방)으로 끌고 간다.",
@@ -224,8 +426,28 @@ def study_room_entry_zero_extra() -> str:
     ])
 
 
-def study_unlimited_mute_message() -> str:
+def study_unlimited_mute_message(tone: str = "snarky") -> str:
     """시간무제한 음소거 공부방 입장 시"""
+    if tone == "loyal":
+        return random.choice([
+            "여기서는 시간 제한 없이 공부하실 수 있사옵니다. 편히 하시옵소서.",
+            "시간 무제한 공부방이옵니다. 집중하시면 되옵니다.",
+        ])
+    if tone == "t91":
+        return random.choice([
+            "여기선 시간 제한 없이 공부하실 수 있어요. 편하게 집중하세요. 응원할게요.",
+            "시간 무제한 공부방이에요. 편히 하시면 돼요. 잘 하실 거예요.",
+        ])
+    if tone in ("t71_90", "t51_70", "t41_50", "t31_40"):
+        return random.choice([
+            "여기선 시간 제한 없어요. 집중해서 해요.",
+            "시간 무제한이니까 편하게 공부해요.",
+        ])
+    if tone in ("t21_30", "t16_20", "t11_15", "t6_10"):
+        return random.choice([
+            "여기선 시간 제한 없어. 집중해서 해.",
+            "시간 무제한이니까 편하게 공부해.",
+        ])
     return random.choice([
         "와.... 여기까지 올 정도면 어지간히 놀았나 보네요? 이제 진짜 좀 하겠다는 거죠?",
         "지금 스트레스 좀 받을 거야.근데 공부 많이 된다.?",
@@ -234,8 +456,28 @@ def study_unlimited_mute_message() -> str:
     ])
 
 
-def study_3h_plus_message(used_str: str) -> str:
+def study_3h_plus_message(used_str: str, tone: str = "snarky") -> str:
     """5시간 입장 시"""
+    if tone == "loyal":
+        return random.choice([
+            f"5시간 공부방이옵니다. 지금까지 {used_str} 하셨사옵고 여기서 더 하시면 되옵니다.",
+            f"지금까지 {used_str} 하셨사옵고, 여기선 5시간까지 가능하옵니다. 화이팅이옵소서.",
+        ])
+    if tone == "t91":
+        return random.choice([
+            f"5시간 공부방이에요. 지금까지 {used_str} 하셨네요. 여기서 더 하시면 돼요. 잘 하실 거예요.",
+            f"지금까지 {used_str} 하셨고 여기선 5시간까지 가능해요. 힘내세요.",
+        ])
+    if tone in ("t71_90", "t51_70", "t41_50", "t31_40"):
+        return random.choice([
+            f"여긴 5시간 방이에요. 지금까지 {used_str} 했네요. 더 할 수 있어요.",
+            f"지금까지 {used_str}. 여기서 5시간까지 해도 돼요.",
+        ])
+    if tone in ("t21_30", "t16_20", "t11_15", "t6_10"):
+        return random.choice([
+            f"여긴 5시간 방이야. 지금까지 {used_str} 했네. 더 할 수 있어.",
+            f"지금까지 {used_str}. 여기서 5시간까지 해도 돼.",
+        ])
     return random.choice([
         f"여긴 5시간 공부방인데.... 그 와중에 지금까지 {used_str}밖에 안 했네요? 5시간이 쉬워보여??",
         f"여긴 공부좀 할려고 하는애들만 오는데인데... {used_str}밖에 안 했어? ㅋ 더 해.",
@@ -243,8 +485,28 @@ def study_3h_plus_message(used_str: str) -> str:
     ])
 
 
-def rest_pinch_5min(member_mention: str) -> str:
+def rest_pinch_5min(member_mention: str, tone: str = "snarky") -> str:
     """쉼터 5분 경과"""
+    if tone == "loyal":
+        return random.choice([
+            f"{member_mention} 휴식 5분이 되셨사옵니다. 15분 넘기시면 3시간 공부방으로 모시어 드리겠나이다.",
+            f"{member_mention} 5분 지나셨사옵니다. 오래 쉬시면 공부방으로 모시겠나이다.",
+        ])
+    if tone == "t91":
+        return random.choice([
+            f"{member_mention} 휴식 5분 되셨어요. 15분 넘기시면 3시간 공부방으로 보내 드릴게요. 알겠어요?",
+            f"{member_mention} 5분 지나셨네요. 너무 오래 쉬시면 공부방으로 안내해 드릴게요.",
+        ])
+    if tone in ("t71_90", "t51_70", "t41_50", "t31_40"):
+        return random.choice([
+            f"{member_mention} 5분 됐어요. 15분 넘기면 3시간 방으로 보낼게요.",
+            f"{member_mention} 5분 지났어요. 더 쉬면 공부방으로 보낸다.",
+        ])
+    if tone in ("t21_30", "t16_20", "t11_15", "t6_10"):
+        return random.choice([
+            f"{member_mention} 5분 됐어. 15분 넘기면 3시간 방으로 보낸다.",
+            f"{member_mention} 5분 지났어. 더 쉬면 공부방으로 보낼게.",
+        ])
     return random.choice([
         f"{member_mention} 지금 휴식 5분째인데 언제까지 쉴려고…? 그걸 지금 공부라 하는 거야…? 15분 넘기면 3시간 공부방으로 끌고 간다.",
         f"{member_mention} 5분 됐다. 더 쉬면 3시간 방으로 보낸다. 새낀 더 많이 공부해라.",
@@ -252,8 +514,28 @@ def rest_pinch_5min(member_mention: str) -> str:
     ])
 
 
-def rest_pinch_10min(member_mention: str) -> str:
+def rest_pinch_10min(member_mention: str, tone: str = "snarky") -> str:
     """쉼터 10분 경과"""
+    if tone == "loyal":
+        return random.choice([
+            f"{member_mention} 이제 10분이 되셨사옵니다. 5분 더 계시면 3시간 공부방으로 모시어 드리겠나이다.",
+            f"{member_mention} 10분 지나셨사옵니다. 15분 되시면 공부방으로 모시겠나이다.",
+        ])
+    if tone == "t91":
+        return random.choice([
+            f"{member_mention} 이제 10분이에요. 5분 더 계시면 3시간 공부방으로 보내 드릴게요. 알겠어요?",
+            f"{member_mention} 10분 지나셨어요. 15분 되시면 공부방으로 안내해 드릴게요.",
+        ])
+    if tone in ("t71_90", "t51_70", "t41_50", "t31_40"):
+        return random.choice([
+            f"{member_mention} 10분 됐어요. 5분 더 있으면 3시간 방으로 보낼게요.",
+            f"{member_mention} 10분 지났어요. 15분 되면 공부방으로 보낸다.",
+        ])
+    if tone in ("t21_30", "t16_20", "t11_15", "t6_10"):
+        return random.choice([
+            f"{member_mention} 10분 됐어. 5분 더 있으면 3시간 방으로 보낸다.",
+            f"{member_mention} 10분 지났어. 15분 되면 공부방으로 보낼게.",
+        ])
     return random.choice([
         f"{member_mention} 지금 휴식 10분째인데 언제까지 쉴려고…? 그걸 지금 공부라 하는 거야…? 5분 더 있으면 3시간 방으로 강제 이동이다.",
         f"{member_mention} 10분이다. 5분 더 있으면 3시간 공부방으로 보낸다. 길게 공부하란 뜻이다.",
@@ -261,9 +543,40 @@ def rest_pinch_10min(member_mention: str) -> str:
     ])
 
 
-def sunong_time_reply(member_mention: str, study_minutes: int) -> str:
-    """!순공시간 명령 시 꼽주기 (오늘 누적 공부 시간 알려주기)"""
+def sunong_time_reply(member_mention: str, study_minutes: int, tone: str = "snarky") -> str:
+    """!순공시간 명령 시 (오늘 누적 공부 시간 알려주기)"""
     used_str = format_minutes(study_minutes)
+    if tone == "loyal":
+        return random.choice([
+            f"{member_mention} 오늘 순공 {used_str} 하셨사옵니다. 꾸준히 하시는 모습 감사하옵니다.",
+            f"{member_mention} 지금까지 {used_str} 공부하셨사옵니다. 수고하고 계시옵소서.",
+            f"{member_mention} {used_str} 하셨사옵나이다. 잘 하시옵소서.",
+        ])
+    if tone == "t91":
+        return random.choice([
+            f"{member_mention} 오늘 순공 {used_str} 하셨어요. 정말 잘 하고 있어요. 응원할게요.",
+            f"{member_mention} 지금까지 {used_str} 했어요. 잘하고 계세요. 힘내요.",
+        ])
+    if tone in ("t71_90", "t51_70"):
+        return random.choice([
+            f"{member_mention} 오늘 {used_str} 했어요. 잘 하고 있어요.",
+            f"{member_mention} 지금까지 {used_str}. 힘내요.",
+        ])
+    if tone in ("t41_50", "t31_40"):
+        return random.choice([
+            f"{member_mention} 오늘 {used_str} 했어요. 잘 해요.",
+            f"{member_mention} 지금까지 {used_str}. 화이팅.",
+        ])
+    if tone in ("t21_30", "t16_20"):
+        return random.choice([
+            f"{member_mention} 오늘 {used_str} 했네. 잘 해.",
+            f"{member_mention} 지금까지 {used_str}. 더 하면 좋겠다.",
+        ])
+    if tone in ("t11_15", "t6_10"):
+        return random.choice([
+            f"{member_mention} 오늘 {used_str} 했네. 잘 해.",
+            f"{member_mention} 지금까지 {used_str}. 더 해.",
+        ])
     return random.choice([
         f"{member_mention} {used_str} 공부했는데, 그거 고작 공부했다고 지금 물어본 거야?",
         f"{member_mention} 오늘 {used_str}. 원래 공부 잘하는 애들은 시간 안 물어보던데....",
@@ -275,8 +588,28 @@ def sunong_time_reply(member_mention: str, study_minutes: int) -> str:
     ])
 
 
-def chat_limit_pinchan(member_mention: str) -> str:
+def chat_limit_pinchan(member_mention: str, tone: str = "snarky") -> str:
     """할당량 안 채운 사람이 채팅 5회 초과 시 핀잔"""
+    if tone == "loyal":
+        return random.choice([
+            f"{member_mention} 할당량을 채우시면 채팅도 자유로우시옵니다. 공부를 먼저 하시옵소서.",
+            f"{member_mention} 아직 할당량이 안 채워져 계시옵니다. 채팅을 줄여 주시면 감사하겠나이다.",
+        ])
+    if tone == "t91":
+        return random.choice([
+            f"{member_mention} 할당량 채우시면 채팅도 자유로우실 거예요. 공부 먼저 해 주세요. 화이팅이에요.",
+            f"{member_mention} 아직 할당량이 안 찼어요. 채팅 줄여 주시면 감사할게요.",
+        ])
+    if tone in ("t71_90", "t51_70", "t41_50", "t31_40"):
+        return random.choice([
+            f"{member_mention} 할당량 채우고 오면 채팅해도 돼요. 지금은 집중해요.",
+            f"{member_mention} 공부 할당량 안 찼으면 채팅 줄여 줘요.",
+        ])
+    if tone in ("t21_30", "t16_20", "t11_15", "t6_10"):
+        return random.choice([
+            f"{member_mention} 할당량 채우고 오면 채팅해도 돼. 지금은 집중해.",
+            f"{member_mention} 공부 할당량 안 찼으면 채팅 줄여 줘.",
+        ])
     return random.choice([
         f"{member_mention} 야 공부도 안 한 놈이 집중 안 해? 채팅 그만 해.",
         f"{member_mention} 공부 할당량 안 채웠으면 채팅부터 줄여. 집중해.",
@@ -286,8 +619,28 @@ def chat_limit_pinchan(member_mention: str) -> str:
     ])
 
 
-def unlimited_room_can_move_message(member_mention: str) -> str:
-    """정신과 시간(무제한)방 5시간 됐을 때 해방 이동 가능 알림 (꼽주기)"""
+def unlimited_room_can_move_message(member_mention: str, tone: str = "snarky") -> str:
+    """정신과 시간(무제한)방 5시간 됐을 때 해방 이동 가능 알림"""
+    if tone == "loyal":
+        return random.choice([
+            f"{member_mention} 5시간 채우셨사옵니다. 이제 해방으로 모시거나 여기서 더 하셔도 되옵니다. 수고 많으셨나이다.",
+            f"{member_mention} 할당량 다 채우셨사옵니다. 해방 이동 가능하옵니다. 편하신 대로 하시옵소서.",
+        ])
+    if tone == "t91":
+        return random.choice([
+            f"{member_mention} 5시간 채우셨네요. 이제 해방 가시거나 여기서 더 하셔도 돼요. 정말 수고 많으셨어요.",
+            f"{member_mention} 할당량 다 채우셨어요. 해방 이동 가능해요. 편하신 대로 하세요. 응원할게요.",
+        ])
+    if tone in ("t71_90", "t51_70", "t41_50", "t31_40"):
+        return random.choice([
+            f"{member_mention} 5시간 채웠어요. 해방 가도 되고 여기서 더 해도 돼요.",
+            f"{member_mention} 할당량 다 채웠네요. 이동 가능해요.",
+        ])
+    if tone in ("t21_30", "t16_20", "t11_15", "t6_10"):
+        return random.choice([
+            f"{member_mention} 5시간 채웠어. 해방 가도 되고 여기서 더 해도 돼.",
+            f"{member_mention} 할당량 다 채웠네. 이동 가능해.",
+        ])
     return random.choice([
         f"{member_mention} 5시간 채웠다. 이제 해방으로 이동 가능하다. 가고 싶으면 가고, 더 하려면 여기서 쭉 해.",
         f"{member_mention} 할당량 다 채웠네. 이동 가능해. 해방 가도 되고 여기서 계속 해도 되고.",
@@ -296,8 +649,28 @@ def unlimited_room_can_move_message(member_mention: str) -> str:
     ])
 
 
-def rest_force_move_15min(member_mention: str) -> str:
-    """쉼터 15분 → 3시간 공부방 강제 이동 시 (더 길게 공부하란 뜻)"""
+def rest_force_move_15min(member_mention: str, tone: str = "snarky") -> str:
+    """쉼터 15분 → 3시간 공부방 강제 이동 시"""
+    if tone == "loyal":
+        return random.choice([
+            f"{member_mention} 15분이 넘어 3시간 공부방으로 모시어 드리겠나이다. 조금만 더 집중하시옵소서.",
+            f"{member_mention} 휴식 시간이 끝나 3시간 공부방으로 안내해 드리겠나이다. 화이팅이옵소서.",
+        ])
+    if tone == "t91":
+        return random.choice([
+            f"{member_mention} 15분이 넘어서 3시간 공부방으로 보내 드릴게요. 거기서 집중하세요. 화이팅이에요.",
+            f"{member_mention} 쉬는 시간이 끝나서 3시간 공부방으로 안내해 드릴게요. 잘 하실 거예요.",
+        ])
+    if tone in ("t71_90", "t51_70", "t41_50", "t31_40"):
+        return random.choice([
+            f"{member_mention} 15분 넘어서 3시간 방으로 보낼게요. 거기서 집중해서 해요.",
+            f"{member_mention} 쉬는 거 끝이에요. 3시간 공부방 가요.",
+        ])
+    if tone in ("t21_30", "t16_20", "t11_15", "t6_10"):
+        return random.choice([
+            f"{member_mention} 15분 넘어서 3시간 방으로 보낼게. 거기서 집중해.",
+            f"{member_mention} 쉬는 거 끝이야. 3시간 공부방 가.",
+        ])
     return random.choice([
         f"{member_mention} 어휴 니놈 공부 안 하니까 내가 강제로라도 시켜야지 원. 3시간 방으로 보낸다. 너 새낀 더 많이 공부해.",
         f"{member_mention} 15분 넘겼다. 이제 3시간 공부방 가. 강제다. 쉬기만 하면 안 되니까 길게 공부해라.",
@@ -338,8 +711,28 @@ def is_study_or_pledge_channel(channel_id: int | None) -> bool:
     return is_study_channel(channel_id) or is_pledge_voice_channel(channel_id)
 
 
-def study_reentry_message(member_mention: str) -> str:
-    """할당량 이미 채운 뒤 공부방 재방문 시 (놀람+응원 꼽주기)"""
+def study_reentry_message(member_mention: str, tone: str = "snarky") -> str:
+    """할당량 이미 채운 뒤 공부방 재방문 시"""
+    if tone == "loyal":
+        return random.choice([
+            f"{member_mention} 할당량 채우시고 또 오셨사옵니다. 대단하시옵니다. 열심히 하시옵소서.",
+            f"{member_mention} 다시 공부하러 오셨사옵니다. 응원하옵나이다.",
+        ])
+    if tone == "t91":
+        return random.choice([
+            f"{member_mention} 할당량 채우고 또 오셨네요. 정말 대단해요. 화이팅이에요.",
+            f"{member_mention} 다시 공부하러 오셨군요. 응원할게요. 잘 하실 거예요.",
+        ])
+    if tone in ("t71_90", "t51_70", "t41_50", "t31_40"):
+        return random.choice([
+            f"{member_mention} 할당량 채우고 또 왔네요. 대단해요. 화이팅.",
+            f"{member_mention} 또 공부하러 왔어? 잘했어요.",
+        ])
+    if tone in ("t21_30", "t16_20", "t11_15", "t6_10"):
+        return random.choice([
+            f"{member_mention} 할당량 채우고 또 왔네. 대단해. 화이팅.",
+            f"{member_mention} 또 공부하러 왔어? 잘했어.",
+        ])
     return random.choice([
         f"오.... {member_mention} 다시 공부하게....? 겨우 한 번 하고 끝이 아니었구나. 뭐, 하려면 제대로 해.",
         f"와 {member_mention} 할당량 채우고 또 왔네? 놀랐다. 그 결심 함 좀 지켜봐.",
@@ -348,8 +741,28 @@ def study_reentry_message(member_mention: str) -> str:
     ])
 
 
-def freedom_quota_done_taunt(member_mention: str) -> str:
-    """할당량 채운 사람이 해방 왔을 때 (음소거 안 걸리지만 꼽주기)"""
+def freedom_quota_done_taunt(member_mention: str, tone: str = "snarky") -> str:
+    """할당량 채운 사람이 해방 왔을 때"""
+    if tone == "loyal":
+        return random.choice([
+            f"{member_mention} 오늘 할당량 채우시고 오셨사옵니다. 편히 쉬시옵소서.",
+            f"{member_mention} 수고 많으셨나이다. 해방에서 편히 놀다 가시옵소서.",
+        ])
+    if tone == "t91":
+        return random.choice([
+            f"{member_mention} 할당량 채우시고 오셨네요. 편히 쉬세요. 수고 많으셨어요.",
+            f"{member_mention} 수고하셨어요. 해방에서 편히 놀다 가세요.",
+        ])
+    if tone in ("t71_90", "t51_70", "t41_50", "t31_40"):
+        return random.choice([
+            f"{member_mention} 할당량 채웠네요. 편히 쉬어요.",
+            f"{member_mention} 수고했어요. 해방에서 놀아요.",
+        ])
+    if tone in ("t21_30", "t16_20", "t11_15", "t6_10"):
+        return random.choice([
+            f"{member_mention} 할당량 채웠네. 편히 쉬어.",
+            f"{member_mention} 수고했어. 해방에서 놀아.",
+        ])
     return random.choice([
         f"그래... 뭐 {member_mention} 넌 오늘 공부 할당량 했으니까.... 그래도 뭔가 좀 한다 싶어서 놀랐는데 역시나....",
         f"{member_mention} 할당량은 채웠네. 그래도 해방 오면 역시 놀려는 거지 ㅋ",
@@ -364,16 +777,56 @@ def study_leave_log_message(member_mention: str, this_session_min: int, today_to
     return f"{member_mention} 공부방 나감. 방금 {s1} 공부했고, 오늘 총 {s2} 공부했음."
 
 
-def pledge_priority_in_other_room_message(member_mention: str, declared_str: str, remaining_str: str) -> str:
+def pledge_priority_in_other_room_message(member_mention: str, declared_str: str, remaining_str: str, tone: str = "snarky") -> str:
     """약속했는데 다른 공부방 들어왔을 때: 약속한 시간이 우선이다"""
+    if tone == "loyal":
+        return random.choice([
+            f"{member_mention} 선언하신 {declared_str} 잊지 마시옵소서. 앞으로 {remaining_str} 더 하시면 되옵니다.",
+            f"{member_mention} 여기서 하셔도 선언하신 만큼은 채우셔야 하옵니다. 앞으로 {remaining_str} 남으셨나이다.",
+        ])
+    if tone == "t91":
+        return random.choice([
+            f"{member_mention} 선언하신 {declared_str} 기억하세요. 앞으로 {remaining_str} 더 하시면 돼요. 화이팅이에요.",
+            f"{member_mention} 여기 있어도 {declared_str} 만큼은 채우셔야 해요. {remaining_str} 남았어요.",
+        ])
+    if tone in ("t71_90", "t51_70", "t41_50", "t31_40"):
+        return random.choice([
+            f"{member_mention} 선언한 {declared_str} 기억해요. 앞으로 {remaining_str} 더 해요.",
+            f"{member_mention} 여기 있어도 {declared_str} 만큼은 해야 해요. {remaining_str} 남았어요.",
+        ])
+    if tone in ("t21_30", "t16_20", "t11_15", "t6_10"):
+        return random.choice([
+            f"{member_mention} 선언한 {declared_str} 기억해. 앞으로 {remaining_str} 더 해.",
+            f"{member_mention} 여기 있어도 {declared_str} 만큼은 해야 해. {remaining_str} 남았어.",
+        ])
     return random.choice([
         f"{member_mention} 동작그만. 밑장빼기냐? 여기서 공부해도 넌 너가 말한 시간을 공부해야 하는 건 변하지 않아. (선언: {declared_str}, 앞으로 {remaining_str} 더)",
         f"{member_mention} 선언한 {declared_str} 잊지 마. 여기 있어도 그만큼은 해야 해. 앞으로 {remaining_str} 더.",
     ])
 
 
-def pledge_room_no_declaration_message(member_mention: str) -> str:
+def pledge_room_no_declaration_message(member_mention: str, tone: str = "snarky") -> str:
     """선언 없이 선언 공부방에 그냥 들어왔을 때"""
+    if tone == "loyal":
+        return random.choice([
+            f"{member_mention} 이 방은 시간을 선언하고 오시는 방이옵니다. 채팅 채널에서 N시간 공부하겠다고 쓰시고 오시옵소서.",
+            f"{member_mention} 여기는 선언 공부방이옵니다. 먼저 몇 시간 하시겠다고 쓰고 오시면 되옵니다.",
+        ])
+    if tone == "t91":
+        return random.choice([
+            f"{member_mention} 이 방은 시간을 선언하고 오시는 방이에요. 채팅에서 N시간 공부하겠다고 쓰고 오시면 돼요.",
+            f"{member_mention} 여기는 선언 공부방이에요. 먼저 몇 시간 하시겠다고 쓰고 오세요.",
+        ])
+    if tone in ("t71_90", "t51_70", "t41_50", "t31_40"):
+        return random.choice([
+            f"{member_mention} 여긴 선언하고 오는 방이에요. 채팅에 N시간 하겠다고 쓰고 와요.",
+            f"{member_mention} 이 방은 시간 선언한 사람만 쓸 수 있어요. 먼저 선언하고 와요.",
+        ])
+    if tone in ("t21_30", "t16_20", "t11_15", "t6_10"):
+        return random.choice([
+            f"{member_mention} 여긴 선언하고 오는 방이야. 채팅에 N시간 하겠다고 쓰고 와.",
+            f"{member_mention} 이 방은 시간 선언한 사람만 쓸 수 있어. 먼저 선언하고 와.",
+        ])
     return random.choice([
         f"이 공부방은 스스로 시간을 선언한 사람만 오는 곳인데.... {member_mention} 너 진짜 공부 다짐한 거야?흉추 걸수있어?",
         f"{member_mention} 여긴 선언하고 오는 방이야. 자신있는거지?",
@@ -381,8 +834,28 @@ def pledge_room_no_declaration_message(member_mention: str) -> str:
     ])
 
 
-def pledge_commit_message(member_mention: str, duration_str: str) -> str:
-    """스스로 N시간 공부 선언 시 로그 꼽주기"""
+def pledge_commit_message(member_mention: str, duration_str: str, tone: str = "snarky") -> str:
+    """스스로 N시간 공부 선언 시 로그"""
+    if tone == "loyal":
+        return random.choice([
+            f"{member_mention} {duration_str} 공부하시겠다고 하셨사옵니다. 화이팅이옵소서. 잘 하시옵소서.",
+            f"{member_mention} {duration_str} 선언하셨사옵니다. 끝까지 하시옵소서. 응원하옵나이다.",
+        ])
+    if tone == "t91":
+        return random.choice([
+            f"{member_mention} {duration_str} 공부하시겠다고 하셨네요. 끝까지 하세요. 화이팅이에요.",
+            f"{member_mention} {duration_str} 선언하셨으니 꼭 지키세요. 응원할게요.",
+        ])
+    if tone in ("t71_90", "t51_70", "t41_50", "t31_40"):
+        return random.choice([
+            f"{member_mention} {duration_str} 하겠다고 했으니 끝까지 해요. 화이팅.",
+            f"{member_mention} {duration_str} 공부한다고 했으니까 지켜요. 잘해요.",
+        ])
+    if tone in ("t21_30", "t16_20", "t11_15", "t6_10"):
+        return random.choice([
+            f"{member_mention} {duration_str} 하겠다고 했으니 끝까지 해. 화이팅.",
+            f"{member_mention} {duration_str} 공부한다고 했으니까 지켜. 잘해.",
+        ])
     return random.choice([
         f"{member_mention} 너가 스스로 {duration_str} 공부한다 했으니까, 이건 꼭 지켜라.",
         f"{member_mention} {duration_str} 하겠다고 했으니 말만 하지 말고 해라.시간 충전해줬으니까 가서 공부 시작해.",
@@ -553,8 +1026,15 @@ async def _fetch_available_gemini_models() -> list:
     return sorted(out)
 
 
-async def get_gemini_reply(user_message: str, image_bytes: bytes | None = None, image_mime: str = "image/jpeg") -> tuple[str | None, str | None]:
-    """제미나이 v1beta REST API로 직접 generateContent 호출. 반환: (답변 텍스트, 사용한 모델명) 또는 (None, None)."""
+async def get_gemini_reply(
+    user_message: str,
+    image_bytes: bytes | None = None,
+    image_mime: str = "image/jpeg",
+    study_level: int = 0,
+    is_owner: bool = False,
+) -> tuple[str | None, str | None]:
+    """제미나이 v1beta REST API로 직접 generateContent 호출. 반환: (답변 텍스트, 사용한 모델명) 또는 (None, None).
+    study_level: 공부 레벨(닉네임 파싱). is_owner: 서버 주인 여부. 말투 조절에 사용."""
     global _gemini_models_cache
     if not (GEMINI_API_KEY and GEMINI_API_KEY.strip()):
         print("[WARN] Gemini: API 키가 비어 있음.")
@@ -576,7 +1056,24 @@ async def get_gemini_reply(user_message: str, image_bytes: bytes | None = None, 
         models_to_try = _gemini_models_cache if _gemini_models_cache else list(GEMINI_MODEL_FALLBACK)
 
     user_text = (user_message.strip() or "이거 봐줘.")[:4000]
-    full_prompt = f"[역할 지시]\n{AI_CHANNEL_SYSTEM_PROMPT}\n\n[사용자 말]\n{user_text}"
+    tone_instruction = ""
+    if is_owner:
+        tone_instruction = "\n\n[말투 조절 — 반드시 적용]\n이 사용자는 이 서버의 **서버 주인**이다. 서버 주인을 신처럼 모시는 말투로. '~하옵니다', '~하옵소서', '감사하옵나이다', '모시어 드리겠나이다' 같은 격식·존경을 다한 표현을 쓰고, 충성을 다하는 느낌으로 조언을 전달하라."
+    elif study_level >= 91:
+        tone_instruction = "\n\n[말투 조절]\n이 사용자의 공부 레벨이 91 이상이다. 완전히 친절하고 따뜻하게. 격려와 응원을 잔뜩 담아서, 꼽주지 말고 진심으로 다정하게 말하라."
+    elif study_level >= 71:
+        tone_instruction = "\n\n[말투 조절]\n이 사용자의 공부 레벨이 71~90이다. 아주 친절하고 격려하듯이 말하라. 데레 쪽을 크게 보여라."
+    elif study_level >= 51:
+        tone_instruction = "\n\n[말투 조절]\n이 사용자의 공부 레벨이 51~70이다. 친절하고 부드럽게. 격려를 담아 말하라."
+    elif study_level >= 31:
+        tone_instruction = "\n\n[말투 조절]\n이 사용자의 공부 레벨이 31~50이다. 말투를 부드럽고 친절하게. 꼽주지 말고 잘해 주는 느낌으로."
+    elif study_level >= 16:
+        tone_instruction = "\n\n[말투 조절]\n이 사용자의 공부 레벨이 16~30이다. 기본 츤데레보다 부드럽게. 데레를 조금 더 보여라."
+    elif study_level >= 6:
+        tone_instruction = "\n\n[말투 조절]\n이 사용자의 공부 레벨이 6~15이다. 기존 츤데레보다 조금 부드럽게. 띠꺼움을 줄이고 꼽주되 너무 심하지 않게."
+    else:
+        tone_instruction = "\n\n[말투 조절]\n이 사용자의 공부 레벨이 1~5이다. 기존처럼 아주 띠꺼운/층데레 말투 유지해도 됨."
+    full_prompt = f"[역할 지시]\n{AI_CHANNEL_SYSTEM_PROMPT}{tone_instruction}\n\n[사용자 말]\n{user_text}"
 
     parts = []
     if image_bytes and len(image_bytes) < 20 * 1024 * 1024:
@@ -775,14 +1272,17 @@ async def sunong_time(ctx: commands.Context):
     """오늘 누적 공부 시간 알려주기 (꼽주기 멘트). 일반 공부방 + 선언 공부방 시간 포함."""
     await maybe_reset_midnight()
     user_id = ctx.author.id
+    # 현재 공부방(일반/선언 모두)에 있으면 직전 입장~지금까지 시간을 먼저 total/session에 반영 (선언공부방·선택시간방 0분 버그 방지)
+    update_user_study_time(user_id)
     state = get_user_state(user_id)
     total_sec = state["total_study_sec"]
-    if ctx.author.voice and ctx.author.voice.channel and ctx.author.voice.channel.id == STUDY_PLEDGE_VOICE_CHANNEL_ID:
-        entered = pledge_room_entered_at.get(user_id)
-        if entered is not None:
-            total_sec += time.time() - entered
+    # 할당량 이미 채운 뒤 재방문 시에는 session_study_sec에 쌓이므로 합산해서 표시
+    if user_id in completed_quota_today:
+        total_sec += state.get("session_study_sec", 0)
+    # 선언 공부방 시간은 위 update_user_study_time에서 이미 last_join_at 기준으로 total_sec에 반영됨 → 따로 더하면 중복
     total_minutes = int(total_sec // 60)
-    msg = sunong_time_reply(ctx.author.mention, total_minutes)
+    tone = get_tone_tier(ctx.author, ctx.guild) if ctx.guild else "snarky"
+    msg = sunong_time_reply(ctx.author.mention, total_minutes, tone)
     await ctx.send(msg)
 
 
@@ -886,13 +1386,15 @@ async def _on_message_impl(message: discord.Message):
                         st["current_channel_id"] = STUDY_PLEDGE_VOICE_CHANNEL_ID
                         st["last_join_at"] = time.time()
                     pledge_ch = guild.get_channel(STUDY_PLEDGE_TEXT_CHANNEL_ID)
+                    pledge_tone = get_tone_tier(message.author, guild) if guild else "snarky"
                     if pledge_ch and isinstance(pledge_ch, (discord.TextChannel, discord.Thread)):
-                        await pledge_ch.send(pledge_commit_message(message.author.mention, duration_str))
+                        await pledge_ch.send(pledge_commit_message(message.author.mention, duration_str, pledge_tone))
                 except Exception as e:
                     print(f"[WARN] 선언 공부방 이동 실패: {e}")
                     pledge_ch = guild.get_channel(STUDY_PLEDGE_TEXT_CHANNEL_ID)
+                    pledge_tone = get_tone_tier(message.author, guild) if guild else "snarky"
                     if pledge_ch and isinstance(pledge_ch, (discord.TextChannel, discord.Thread)):
-                        await pledge_ch.send(pledge_commit_message(message.author.mention, duration_str))
+                        await pledge_ch.send(pledge_commit_message(message.author.mention, duration_str, pledge_tone))
                     if in_pledge_already:
                         pledge_room_entered_at[user_id] = time.time()
                         st = get_user_state(user_id)
@@ -917,7 +1419,8 @@ async def _on_message_impl(message: discord.Message):
             except (discord.Forbidden, discord.NotFound):
                 pass
             try:
-                await message.channel.send(chat_limit_pinchan(message.author.mention))
+                chat_tone = get_tone_tier(message.author, guild) if guild else "snarky"
+                await message.channel.send(chat_limit_pinchan(message.author.mention, chat_tone))
             except discord.Forbidden:
                 pass
             # 6회 넘기면 채팅 제한 역할 부여 → 진짜 채팅 불가
@@ -976,10 +1479,15 @@ async def _on_message_impl(message: discord.Message):
                 except Exception as e:
                     print(f"[WARN] 이미지 다운로드 실패: {e}")
                 break
-        # 시도 순서 도는 동안 디스코드에 "입력 중..." 표시
+        # 시도 순서 도는 동안 디스코드에 "입력 중..." 표시 (레벨/서버주인에 따라 AI 말투 조절)
+        study_level = parse_study_level(message.author) if isinstance(message.author, discord.Member) else 0
+        is_owner = message.guild is not None and message.guild.owner_id == message.author.id
         try:
             async with message.channel.typing():
-                gemini_reply, model_used = await get_gemini_reply(content or "이거 봐줘.", image_bytes, image_mime)
+                gemini_reply, model_used = await get_gemini_reply(
+                    content or "이거 봐줘.", image_bytes, image_mime,
+                    study_level=study_level, is_owner=is_owner,
+                )
         except Exception:
             gemini_reply, model_used = None, None
         if gemini_reply and gemini_reply.strip():
@@ -1043,7 +1551,7 @@ async def on_voice_state_update(member: discord.Member, before: discord.VoiceSta
             pledge_room_entered_at.pop(user_id, None)
             this_m = (time.time() - entered) / 60 if entered else 0
             pledge_completed_minutes[user_id] = pledge_completed_minutes.get(user_id, 0) + this_m
-            state["total_study_sec"] = state["total_study_sec"] + (this_m * 60)
+            # total_study_sec는 위 update_user_study_time()에서 이미 선언방 시간이 반영됨 → 여기서 다시 더하면 중복
             target = pledge_target_minutes.get(user_id, 0)
             remain = max(0, target - pledge_completed_minutes[user_id])
             if pledge_completed_minutes[user_id] >= target and target > 0:
@@ -1086,6 +1594,7 @@ async def on_voice_state_update(member: discord.Member, before: discord.VoiceSta
 
     # ===== 2) 보이스에 들어오거나 채널 이동한 경우 =====
     if new_channel_id is not None:
+        tone = get_tone_tier(member, guild)
         joined_study = is_study_channel(new_channel_id)
         joined_rest = is_rest_channel(new_channel_id)
         joined_freedom = is_freedom_channel(new_channel_id)
@@ -1104,7 +1613,7 @@ async def on_voice_state_update(member: discord.Member, before: discord.VoiceSta
                 await member.edit(mute=False)
             except discord.Forbidden:
                 print(f"[WARN] {member} 서버 음소거 해제 권한 없음")
-            await send_notice(guild, rest_entry_message(member.mention))
+            await send_notice(guild, rest_entry_message(member.mention, tone))
             await send_notice(guild, f"{member.mention} 쉼터 입장. 오늘 {visit_count}번째 방문, 지금까지 누적 {total_rest_m}분 쉼.")
             return
 
@@ -1118,14 +1627,14 @@ async def on_voice_state_update(member: discord.Member, before: discord.VoiceSta
                     await member.edit(mute=False)
                 except discord.Forbidden:
                     print(f"[WARN] {member} 서버 음소거 해제 권한 없음")
-                await send_notice(guild, freedom_quota_done_taunt(member.mention))
+                await send_notice(guild, freedom_quota_done_taunt(member.mention, tone))
             else:
                 # 할당량 안 채운 사람: 서버 음소거 + 꼽주기
                 try:
                     await member.edit(mute=True)
                 except discord.Forbidden:
                     print(f"[WARN] {member} 서버 음소거 권한 없음")
-                await send_notice(guild, freedom_taunt_message(member.mention))
+                await send_notice(guild, freedom_taunt_message(member.mention, tone))
             return
 
         # --- 스스로 N시간 공부 선언 음성방 입장 (선언했을 때만 타이머, 아니면 안내만) ---
@@ -1136,7 +1645,7 @@ async def on_voice_state_update(member: discord.Member, before: discord.VoiceSta
                 print(f"[WARN] {member} 서버 음소거 권한 없음")
             target = pledge_target_minutes.get(user_id)
             if not target or target <= 0:
-                await send_notice(guild, pledge_room_no_declaration_message(member.mention))
+                await send_notice(guild, pledge_room_no_declaration_message(member.mention, tone))
                 return
             state["in_study"] = True
             state["current_channel_id"] = new_channel_id
@@ -1164,7 +1673,7 @@ async def on_voice_state_update(member: discord.Member, before: discord.VoiceSta
                 completed = pledge_completed_minutes.get(user_id, 0)
                 remain = max(0, target - int(completed))
                 await send_notice(guild, pledge_priority_in_other_room_message(
-                    member.mention, format_minutes(target), format_minutes(remain),
+                    member.mention, format_minutes(target), format_minutes(remain), tone,
                 ))
             else:
                 # 재방문 시(이미 오늘 공부한 적 있음) 로그에 오늘 총 공부 시간 안내
@@ -1181,7 +1690,7 @@ async def on_voice_state_update(member: discord.Member, before: discord.VoiceSta
             limit_minutes = ROOM_LIMIT_MINUTES.get(new_channel_id, 9999)
 
             if user_id in completed_quota_today:
-                await send_notice(guild, study_reentry_message(member.mention))
+                await send_notice(guild, study_reentry_message(member.mention, tone))
                 return
 
             # 선언한 시간이 있으면 이 공부방 입장 멘트는 생략 (위에서 선언 우선 안내만 함)
@@ -1191,18 +1700,18 @@ async def on_voice_state_update(member: discord.Member, before: discord.VoiceSta
             total_minutes = int(state["total_study_sec"] // 60)
             # 시간무제한 음소거 공부방 전용 멘트
             if new_channel_id == CHANNELS["STUDY_UNLIMITED_MUTE"]:
-                core = study_unlimited_mute_message()
+                core = study_unlimited_mute_message(tone)
             elif limit_minutes < 9999:
                 used_str = format_minutes(total_minutes)
                 remain_str = format_minutes(remaining)
-                core = study_room_entry_finite(used_str, remain_str)
+                core = study_room_entry_finite(used_str, remain_str, tone)
             else:
                 used_str = format_minutes(total_minutes)
-                core = study_3h_plus_message(used_str)
+                core = study_3h_plus_message(used_str, tone)
 
-            msg = f"{snarky_prefix()}{member.mention} {core}"
+            msg = f"{snarky_prefix(tone)}{member.mention} {core}"
             if remaining <= 0 and limit_minutes < 9999:
-                msg += study_room_entry_zero_extra()
+                msg += study_room_entry_zero_extra(tone)
 
             await send_notice(guild, msg)
             return
@@ -1284,7 +1793,8 @@ async def check_study_time():
                     restricted_chat_user_ids.discard(user_id)
                 if user_id not in unlimited_room_5h_notified_today:
                     unlimited_room_5h_notified_today.add(user_id)
-                    await send_notice(guild, unlimited_room_can_move_message(member.mention))
+                    check_tone = get_tone_tier(member, guild)
+                    await send_notice(guild, unlimited_room_can_move_message(member.mention, check_tone))
                 continue
 
             # 3시간 이상 공부방 / 정신과 시간공부방: 5시간 되면 해방 이동. 그 외 유한 방·선언방은 remaining <= 0 시 이동
@@ -1320,7 +1830,8 @@ async def check_study_time():
                 except discord.Forbidden:
                     print(f"[WARN] {member} 서버 음소거 해제 권한 없음")
 
-                await send_notice(guild, snarky_done_message(member.mention))
+                done_tone = get_tone_tier(member, guild)
+                await send_notice(guild, snarky_done_message(member.mention, done_tone))
 
 
 @tasks.loop(seconds=60)
@@ -1358,13 +1869,16 @@ async def check_rest_time():
                     print(f"쉼터→공부방 이동 실패 ({member}): {e}")
                 rest_entered_at.pop(user_id, None)
                 rest_pinch_sent.pop(user_id, None)
-                await send_notice(guild, rest_force_move_15min(member.mention))
+                rest_tone = get_tone_tier(member, guild)
+                await send_notice(guild, rest_force_move_15min(member.mention, rest_tone))
             elif elapsed_min >= 10 and 10 not in sent:
                 sent.add(10)
-                await send_notice(guild, rest_pinch_10min(member.mention))
+                rest_tone = get_tone_tier(member, guild)
+                await send_notice(guild, rest_pinch_10min(member.mention, rest_tone))
             elif elapsed_min >= 5 and 5 not in sent:
                 sent.add(5)
-                await send_notice(guild, rest_pinch_5min(member.mention))
+                rest_tone = get_tone_tier(member, guild)
+                await send_notice(guild, rest_pinch_5min(member.mention, rest_tone))
 
 
 # ======================= 실행 ==========================
